@@ -12,12 +12,13 @@ import urllib.robotparser
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def crawl_urls(urls):
+def crawl_urls(urls, target_count=1):
     """
     Crawl a list of URLs and extract relevant content.
     
     Args:
         urls (list): List of URLs to crawl
+        target_count (int): Number of sources to collect (default: 1)
         
     Returns:
         list: List of dictionaries containing extracted content and metadata
@@ -56,9 +57,24 @@ def crawl_urls(urls):
     # Create a dictionary to store robots.txt parsers
     robots_parsers = {}
     
+    # Keep track of crawled URLs
+    attempted_urls = set()
+    
+    # Continue crawling until we have enough sources or run out of URLs
     for url in urls:
+        # Check if we've reached the target count
+        if len(sources) >= target_count:
+            logger.info(f"Reached target of {target_count} sources, stopping crawl")
+            break
+            
+        # Skip if we've already attempted this URL
+        if url in attempted_urls:
+            continue
+            
+        attempted_urls.add(url)
+        
         try:
-            logger.info(f"Crawling URL: {url}")
+            logger.info(f"Crawling URL: {url} ({len(sources)}/{target_count} sources collected)")
             
             # Skip if URL is invalid
             if not url or not url.startswith(('http://', 'https://')):
@@ -157,7 +173,16 @@ def crawl_urls(urls):
             logger.error(f"Error crawling URL {url}: {str(e)}")
             continue
             
-    return sources
+    # Log crawl statistics
+    logger.info(f"Crawl completed: {len(sources)}/{target_count} sources collected")
+    logger.info(f"Attempted {len(attempted_urls)} URLs in total")
+    
+    # If we still don't have enough sources, log a warning
+    if len(sources) < target_count:
+        logger.warning(f"Could not collect requested {target_count} sources, only found {len(sources)}")
+    
+    # Return only up to the target count (in case we collected more)
+    return sources[:target_count]
 
 def extract_main_content(soup):
     """

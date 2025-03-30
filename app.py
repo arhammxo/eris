@@ -47,14 +47,16 @@ def search():
     
     # Start the search process
     # Step 1: Search the web for relevant URLs
-    urls = search_web(query, max_results=depth)
+    # Request more URLs than needed to account for crawling failures
+    buffer_factor = 2  # Request 2x the URLs to account for failures
+    urls = search_web(query, max_results=depth * buffer_factor)
     
     if not urls:
         return render_template('index.html', 
                                error="No relevant results found. Please try a different query.")
     
     # Step 2: Crawl the URLs to extract content
-    sources = crawl_urls(urls)
+    sources = crawl_urls(urls, target_count=depth)
     
     if not sources:
         return render_template('index.html', 
