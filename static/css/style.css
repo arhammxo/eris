@@ -1,0 +1,104 @@
+/* Main styling for Web Summarizer app */
+
+/* Body styling */
+body {
+    background-color: #f8f9fa;
+    color: #333;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Card styling */
+.card {
+    border-radius: 10px;
+    overflow: hidden;
+    border: none;
+    margin-bottom: 20px;
+}
+
+.card-header {
+    background-color: #f1f5f9;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+    padding: 15px 20px;
+}
+
+.card-body {
+    padding: 20px;
+}
+
+/* Form styling */
+.form-control:focus, .form-select:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Summary content styling */
+.summary-content {
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+.summary-content p {
+    margin-bottom: 16px;
+}
+
+/* Source list styling */
+.source-snippet {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.list-group-item-action:hover {
+    background-color: #f1f5f9;
+}
+
+/* Button styling */
+.btn-primary {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+}
+
+/* Shadow effects */
+.shadow {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Loading indicator */
+.loading-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100px;
+}
+
+/* Metadata badges */
+.badge {
+    font-weight: normal;
+    padding: 6px 10px;
+}
+
+/* Navigation */
+.navbar-brand {
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+/* Footer */
+footer {
+    border-top: 1px solid rgba(0,0,0,0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card-title {
+        font-size: 1.5rem;
+    }
+    
+    .summary-content {
+        font-size: 1rem;
+    }
+}

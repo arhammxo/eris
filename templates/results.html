@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Results: {{ query }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card shadow mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="mb-0">Summary Results</h2>
+                <a href="/" class="btn btn-outline-primary btn-sm">New Search</a>
+            </div>
+            <div class="card-body">
+                <h3 class="card-title">{{ query }}</h3>
+                <hr>
+                <div class="summary-content">
+                    {{ summary|safe }}
+                </div>
+            </div>
+        </div>
+        
+        <div class="card shadow">
+            <div class="card-header">
+                <h3 class="mb-0">Sources</h3>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for source in sources %}
+                    <a href="{{ source.url }}" target="_blank" class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h5 class="mb-1">{{ source.title }}</h5>
+                            <small class="text-muted">{{ source.domain }}</small>
+                        </div>
+                        <p class="mb-1 source-snippet">
+                            {{ source.content[:200] + '...' if source.content|length > 200 else source.content }}
+                        </p>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <h3 class="mb-0">Metadata</h3>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Sources analyzed
+                        <span class="badge bg-primary rounded-pill">{{ metadata.sources_count }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Total content processed
+                        <span class="badge bg-secondary rounded-pill">{{ metadata.total_content_length }} chars</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Generated on
+                        <span class="text-muted">{{ metadata.generated_at|timestamp_to_datetime }}</span>
+                    </li>
+                    {% if metadata.model_used %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        Model used
+                        <span class="badge bg-info rounded-pill">{{ metadata.model_used }}</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card shadow">
+            <div class="card-header">
+                <h3 class="mb-0">Actions</h3>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" id="copy-summary">
+                        <i class="bi bi-clipboard"></i> Copy Summary
+                    </button>
+                    <a href="/" class="btn btn-primary">New Search</a>
+                    <button class="btn btn-outline-secondary" id="share-button">
+                        <i class="bi bi-share"></i> Share Results
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Copy summary to clipboard
+    document.getElementById('copy-summary').addEventListener('click', function() {
+        const summaryText = document.querySelector('.summary-content').innerText;
+        navigator.clipboard.writeText(summaryText)
+            .then(() => {
+                this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
+                setTimeout(() => {
+                    this.innerHTML = '<i class="bi bi-clipboard"></i> Copy Summary';
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy: ', err);
+                alert('Failed to copy summary');
+            });
+    });
+    
+    // Share functionality (simplified)
+    document.getElementById('share-button').addEventListener('click', function() {
+        if (navigator.share) {
+            navigator.share({
+                title: 'Web Summary: {{ query }}',
+                text: document.querySelector('.summary-content').innerText.substring(0, 100) + '...',
+                url: window.location.href,
+            })
+            .catch(err => {
+                console.error('Share failed:', err);
+            });
+        } else {
+            alert('Web Share API not supported in your browser');
+        }
+    });
+</script>
+{% endblock %}

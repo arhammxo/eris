@@ -1,0 +1,10 @@
+flask
+requests
+beautifulsoup4
+openai
+python-dotenv
+nltk
+serpapi
+lxml
+flask-caching
+google-search-results

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Web Summarizer - Search{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-body">
+                <h1 class="card-title text-center mb-4">Web Information Summarizer</h1>
+                
+                <p class="lead text-center">
+                    Enter a query and we'll search the web, analyze the results, and provide a comprehensive summary.
+                </p>
+                
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+                
+                <form action="/search" method="POST" id="search-form">
+                    <div class="mb-3">
+                        <label for="query" class="form-label">What would you like to know about?</label>
+                        <input type="text" class="form-control form-control-lg" id="query" name="query" 
+                               placeholder="Enter your search query" required>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="depth" class="form-label">Search Depth</label>
+                            <select class="form-select" id="depth" name="depth">
+                                <option value="3" selected>Standard (3 sources)</option>
+                                <option value="5">Deep (5 sources)</option>
+                                <option value="1">Quick (1 source)</option>
+                            </select>
+                            <div class="form-text">How many sources to analyze</div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label for="summary_length" class="form-label">Summary Length</label>
+                            <select class="form-select" id="summary_length" name="summary_length">
+                                <option value="short">Short</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="long">Long</option>
+                            </select>
+                            <div class="form-text">How detailed you want the summary</div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg" id="search-button">
+                            Search & Summarize
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4 shadow" id="about">
+            <div class="card-body">
+                <h2 class="card-title">About This App</h2>
+                <p>
+                    This demo application showcases web crawling, information retrieval, and AI-powered summarization. 
+                    It searches for information on your topic, extracts content from relevant web pages, and uses 
+                    natural language processing to generate a comprehensive summary.
+                </p>
+                <p>
+                    <strong>Features:</strong>
+                </p>
+                <ul>
+                    <li>Web search through multiple sources</li>
+                    <li>Content extraction and cleaning</li>
+                    <li>Natural language processing</li>
+                    <li>AI-powered summarization</li>
+                    <li>Source attribution and citation</li>
+                </ul>
+                <p class="text-muted">
+                    Note: This is a demonstration application with limited capabilities.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Add loading indicator when form is submitted
+    document.getElementById('search-form').addEventListener('submit', function(e) {
+        // Show loading state
+        const button = document.getElementById('search-button');
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Processing...';
+        button.disabled = true;
+    });
+</script>
+{% endblock %}
