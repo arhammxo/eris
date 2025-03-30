@@ -78,7 +78,10 @@ A Flask-based application that demonstrates web crawling, information retrieval,
 This demo app provides a foundation that can be extended in various ways:
 
 - Add user authentication and saved searches
-- Implement more sophisticated content extraction
+- Further enhance crawler capabilities:
+  - Implement proxy support for IP rotation
+  - Add browser automation for JavaScript-heavy sites
+  - Develop site-specific extraction rules for popular domains
 - Add different summarization models
 - Create a more advanced caching system
 - Add visualization of source relationships

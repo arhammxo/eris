@@ -18,11 +18,13 @@ class Config:
     
     # Crawler settings
     MAX_URLS_TO_CRAWL = 5
-    CRAWL_TIMEOUT = 10  # seconds
+    CRAWL_TIMEOUT = 15  # seconds - increased to allow for slower sites
+    RESPECT_ROBOTS_TXT = True  # Whether to respect robots.txt rules
+    MAX_RETRIES = 3    # Maximum number of retries for failed requests
     
     # Summarization settings
     MAX_TOKENS = 1000
-    SUMMARY_MODEL = "gpt-4o"
+    SUMMARY_MODEL = "gpt-3.5-turbo"
     
     # Text processing
     CHUNK_SIZE = 4000  # characters
