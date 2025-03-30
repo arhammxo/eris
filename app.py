@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify, session
 from flask_caching import Cache
 import time
 import uuid
+from datetime import datetime
 
 # Import application modules
 from modules.search import search_web
@@ -16,6 +17,14 @@ app.config.from_object(Config)
 
 # Initialize cache
 cache = Cache(app)
+
+# Register Jinja2 filters
+@app.template_filter('timestamp_to_datetime')
+def timestamp_to_datetime(timestamp):
+    """Convert a Unix timestamp to a formatted datetime string."""
+    if not timestamp:
+        return ''
+    return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
 @app.route('/', methods=['GET'])
 def index():
