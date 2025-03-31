@@ -20,8 +20,23 @@
                 <form action="/search" method="POST" id="search-form">
                     <div class="mb-3">
                         <label for="query" class="form-label">What would you like to know about?</label>
-                        <input type="text" class="form-control form-control-lg" id="query" name="query" 
-                               placeholder="Enter your search query" required>
+                        <div class="input-group">
+                            <input type="text" class="form-control form-control-lg" id="query" name="query" 
+                                   placeholder="Enter your search query" required>
+                            <button type="button" class="btn btn-outline-secondary speech-input-btn" id="speech-input-btn" aria-label="Search by voice">
+                                <i class="bi bi-mic"></i>
+                            </button>
+                        </div>
+                        <div id="speech-feedback" class="speech-feedback mt-2" aria-live="polite">
+                            <div class="speech-status"></div>
+                            <div class="audio-level-indicator">
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="row mb-3">

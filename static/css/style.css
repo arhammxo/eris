@@ -102,3 +102,93 @@ footer {
         font-size: 1rem;
     }
 }
+
+/* Speech recognition styles */
+.speech-input-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 48px;
+    font-size: 1.2rem;
+}
+
+.speech-input-btn:hover {
+    background-color: #f0f0f0;
+}
+
+.speech-input-btn.listening {
+    background-color: #dc3545;
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+.speech-input-btn.processing {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+.speech-feedback {
+    display: none;
+    margin-top: 0.5rem;
+    text-align: center;
+}
+
+.speech-feedback.active {
+    display: block;
+}
+
+.speech-status {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 5px;
+}
+
+.audio-level-indicator {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    height: 30px;
+    gap: 3px;
+    margin: 0 auto;
+    width: 60%;
+}
+
+.audio-level-indicator .bar {
+    width: 4px;
+    height: 5px;
+    background-color: #0d6efd;
+    border-radius: 1px;
+    transition: height 0.1s ease;
+}
+
+/* Confidence levels */
+.confidence-high {
+    background-color: rgba(40, 167, 69, 0.1);
+    border: 1px solid rgba(40, 167, 69, 0.2);
+}
+
+.confidence-medium {
+    background-color: transparent;
+}
+
+.confidence-low {
+    background-color: rgba(255, 193, 7, 0.1);
+    border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+/* Pulse animation for listening state */
+@keyframes pulse {
+    0% { 
+        transform: scale(1); 
+        opacity: 1;
+    }
+    50% { 
+        transform: scale(1.05); 
+        opacity: 0.8;
+    }
+    100% { 
+        transform: scale(1); 
+        opacity: 1;
+    }
+}
