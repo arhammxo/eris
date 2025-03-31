@@ -11,71 +11,63 @@ logger = logging.getLogger(__name__)
 async def integrated_crawl(urls, target_count=1):
     """
     Integrated crawling function that combines regular and browser-based crawling.
-    
-    This function first attempts regular HTTP crawling, and if that fails or
-    detects a JavaScript-heavy site, it falls back to browser-based crawling.
-    
-    Args:
-        urls (list): List of URLs to crawl
-        target_count (int): Number of sources to collect
-        
-    Returns:
-        list: List of dictionaries containing extracted content and metadata
     """
     sources = []
     attempted_urls = set()
     browser_crawled = set()
     
-    # Queue to track URLs that need browser crawling
-    browser_queue = asyncio.Queue()
+    logger.info(f"Starting integrated crawling for {len(urls)} URLs with target of {target_count} sources")
     
-    # First attempt: Try regular crawling for all URLs
-    logger.info(f"Starting regular crawling for {len(urls)} URLs")
-    
-    # Request more URLs than needed to account for failures
-    buffer_factor = 2
-    initial_urls = urls[:target_count * buffer_factor]
-    
-    # Perform regular crawling
-    regular_sources = await async_crawl(initial_urls, target_count)
-    attempted_urls.update([source['url'] for source in regular_sources])
-    
-    # Add successful sources to our list
-    sources.extend(regular_sources)
-    
-    # Check if we need more sources
-    remaining = target_count - len(sources)
-    
-    if remaining > 0:
-        logger.info(f"Regular crawling got {len(sources)}/{target_count} sources. Need {remaining} more.")
+    # Process URLs in smaller batches until we reach the target
+    url_index = 0
+    while len(sources) < target_count and url_index < len(urls):
+        # Calculate how many more sources we need
+        remaining_sources = target_count - len(sources)
         
-        # Get URLs we haven't tried yet
-        remaining_urls = [url for url in urls if url not in attempted_urls]
+        # Determine how many URLs to process in this batch (use a multiplier for safety)
+        batch_size = min(remaining_sources * 2, len(urls) - url_index)
+        batch_urls = urls[url_index:url_index + batch_size]
+        url_index += batch_size
         
-        # If we have remaining URLs, try browser crawling
-        if remaining_urls:
-            # Prioritize browser crawling for remaining sources
-            crawl_tasks = []
-            for url in remaining_urls[:remaining]:
-                task = asyncio.create_task(browser_crawl_task(url, browser_crawled))
-                crawl_tasks.append(task)
-                
-            # Wait for browser crawling tasks to complete
-            browser_results = await asyncio.gather(*crawl_tasks, return_exceptions=True)
+        logger.info(f"Processing batch of {len(batch_urls)} URLs (have {len(sources)}/{target_count} sources)")
+        
+        # Try regular crawling first
+        regular_sources = await async_crawl(batch_urls, remaining_sources)
+        attempted_urls.update([source['url'] for source in regular_sources])
+        sources.extend(regular_sources)
+        
+        # If we still need more sources, try browser crawling for any URLs we haven't attempted
+        if len(sources) < target_count:
+            remaining_sources = target_count - len(sources)
+            remaining_urls = [url for url in batch_urls if url not in attempted_urls]
             
-            # Process successful results
-            for result in browser_results:
-                if result and not isinstance(result, Exception):
-                    sources.append(result)
-                    if len(sources) >= target_count:
-                        break
+            if remaining_urls:
+                # Limit to just what we need
+                browser_urls = remaining_urls[:remaining_sources]
+                
+                # Create browser crawling tasks
+                crawl_tasks = []
+                for url in browser_urls:
+                    task = asyncio.create_task(browser_crawl_task(url, browser_crawled))
+                    crawl_tasks.append(task)
+                
+                # Wait for all browser crawling tasks to complete
+                browser_results = await asyncio.gather(*crawl_tasks, return_exceptions=True)
+                
+                # Add successful results
+                for result in browser_results:
+                    if result and not isinstance(result, Exception):
+                        sources.append(result)
+                        if len(sources) >= target_count:
+                            break
+    
+    # Log results
+    logger.info(f"Integrated crawl completed: {len(sources)}/{target_count} sources collected")
     
     # Sort sources by the order they appear in the original URL list
-    # This maintains the search relevance order
     url_order = {url: i for i, url in enumerate(urls)}
     sources.sort(key=lambda s: url_order.get(s['url'], float('inf')))
     
-    # Return only up to the target count
     return sources[:target_count]
 
 async def browser_crawl_task(url, browser_crawled):
