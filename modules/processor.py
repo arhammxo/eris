@@ -1,62 +1,135 @@
-import nltk
+"""
+Text processor for web content analysis.
+
+This module handles the processing of extracted web content, including
+cleaning, sentence extraction, chunking, and quality scoring.
+"""
+import asyncio
 import re
-import logging
-from flask import current_app
+from typing import Dict, List, Optional, Any
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import nltk
+from nltk.corpus import stopwords
 
-# Download necessary NLTK data (uncomment for first run)
-# nltk.download('punkt')
-# nltk.download('stopwords')
+from quart import current_app
 
-def process_text(sources):
+from modules.utils.types import Source, ProcessedSource
+from modules.utils.errors import ProcessorError, TextAnalysisError, handle_async_exceptions
+from modules.utils.logging import get_logger
+from modules.content_quality import ContentQualityScorer
+
+# Create a logger for this module
+logger = get_logger(__name__)
+
+# Ensure required NLTK data is available
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    logger.info("Downloading NLTK punkt tokenizer")
+    nltk.download('punkt', quiet=True)
+
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    logger.info("Downloading NLTK stopwords")
+    nltk.download('stopwords', quiet=True)
+
+# Initialize content quality scorer
+quality_scorer = ContentQualityScorer()
+
+async def process_text(sources: List[Source]) -> List[ProcessedSource]:
     """
-    Process the extracted text from multiple sources.
+    Process the extracted text from multiple sources asynchronously.
     
     Args:
-        sources (list): List of dictionaries containing source content and metadata
+        sources: List of dictionaries containing source content and metadata
         
     Returns:
-        dict: Processed content organized by source
+        Processed content organized by source
     """
-    processed_content = []
+    if not sources:
+        logger.warning("No sources provided for processing")
+        return []
+        
+    processed_content: List[ProcessedSource] = []
     
-    for source in sources:
-        try:
-            # Get the content
-            content = source['content']
-            
-            # Skip if no content
-            if not content:
-                continue
-                
-            # Process the content
-            cleaned_text = clean_text(content)
-            important_sentences = extract_important_sentences(cleaned_text)
-            chunks = create_chunks(cleaned_text)
-            
-            # Add to processed content
-            processed_content.append({
-                'url': source['url'],
-                'title': source['title'],
-                'domain': source['domain'],
-                'cleaned_text': cleaned_text,
-                'important_sentences': important_sentences,
-                'chunks': chunks,
-                'original_length': len(content),
-                'processed_length': len(cleaned_text)
-            })
-            
-        except Exception as e:
-            logger.error(f"Error processing content from {source.get('url', 'unknown')}: {str(e)}")
-            continue
-            
+    # Create tasks for processing each source
+    tasks = [process_source(source) for source in sources]
+    
+    # Process all sources concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # Filter out exceptions and collect successful results
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Error during processing: {str(result)}")
+        elif result:  # Skip None results
+            processed_content.append(result)
+    
+    # Sort by quality score in descending order
+    processed_content.sort(key=lambda x: x.get('quality_score', 0), reverse=True)
+    
     return processed_content
 
-def clean_text(text):
-    """Clean and normalize text."""
+@handle_async_exceptions(ProcessorError, "Failed to process source")
+async def process_source(source: Source) -> Optional[ProcessedSource]:
+    """
+    Process a single source asynchronously.
+    
+    Args:
+        source: Source data with content and metadata
+        
+    Returns:
+        Processed source data
+    """
+    # Get the content
+    content = source.get('content', '')
+    
+    # Skip if no content
+    if not content:
+        logger.warning(f"No content to process for {source.get('url', 'unknown')}")
+        return None
+    
+    # Process the content (these can be CPU-bound)
+    cleaned_text = await asyncio.to_thread(clean_text, content)
+    important_sentences = await asyncio.to_thread(extract_important_sentences, cleaned_text)
+    
+    # Use app context if available to get chunk size
+    chunk_size = None
+    try:
+        chunk_size = current_app.config.get('CHUNK_SIZE', 4000)
+    except RuntimeError:
+        # No app context
+        chunk_size = 4000
+        
+    chunks = await asyncio.to_thread(create_chunks, cleaned_text, chunk_size)
+    
+    # Score the content quality
+    quality_score = await asyncio.to_thread(quality_scorer.score_content, source)
+    
+    # Create processed source
+    return {
+        'url': source['url'],
+        'title': source['title'],
+        'domain': source['domain'],
+        'cleaned_text': cleaned_text,
+        'important_sentences': important_sentences,
+        'chunks': chunks,
+        'original_length': len(content),
+        'processed_length': len(cleaned_text),
+        'quality_score': quality_score
+    }
+
+def clean_text(text: str) -> str:
+    """
+    Clean and normalize text.
+    
+    Args:
+        text: Raw text content
+        
+    Returns:
+        Cleaned text
+    """
     # Convert to lowercase
     text = text.lower()
     
@@ -71,12 +144,18 @@ def clean_text(text):
     
     return text
 
-def extract_important_sentences(text, num_sentences=5):
+def extract_important_sentences(text: str, num_sentences: int = 5) -> List[str]:
     """
     Extract the most important sentences from the text.
     
-    This is a simplified implementation using frequency-based ranking.
-    A production version would use more sophisticated algorithms like TextRank.
+    Uses frequency-based ranking to identify key sentences.
+    
+    Args:
+        text: Cleaned text content
+        num_sentences: Number of sentences to extract
+        
+    Returns:
+        List of important sentences
     """
     try:
         # Tokenize into sentences
@@ -90,11 +169,11 @@ def extract_important_sentences(text, num_sentences=5):
         words = nltk.word_tokenize(text)
         
         # Remove stopwords
-        stopwords = set(nltk.corpus.stopwords.words('english'))
-        words = [word for word in words if word.lower() not in stopwords]
+        stop_words = set(stopwords.words('english'))
+        words = [word for word in words if word.lower() not in stop_words]
         
         # Calculate word frequencies
-        word_frequencies = {}
+        word_frequencies: Dict[str, int] = {}
         for word in words:
             if word not in word_frequencies:
                 word_frequencies[word] = 1
@@ -102,12 +181,12 @@ def extract_important_sentences(text, num_sentences=5):
                 word_frequencies[word] += 1
                 
         # Normalize frequencies
-        maximum_frequency = max(word_frequencies.values())
+        max_frequency = max(word_frequencies.values()) if word_frequencies else 1
         for word in word_frequencies:
-            word_frequencies[word] = word_frequencies[word] / maximum_frequency
+            word_frequencies[word] = word_frequencies[word] / max_frequency
             
         # Score sentences
-        sentence_scores = {}
+        sentence_scores: Dict[str, float] = {}
         for sentence in sentences:
             for word in nltk.word_tokenize(sentence.lower()):
                 if word in word_frequencies:
@@ -124,23 +203,25 @@ def extract_important_sentences(text, num_sentences=5):
         
     except Exception as e:
         logger.error(f"Error extracting important sentences: {str(e)}")
-        # If anything fails, return the first few sentences
-        sentences = nltk.sent_tokenize(text)
-        return sentences[:num_sentences]
+        raise TextAnalysisError(f"Failed to extract important sentences: {str(e)}")
 
-def create_chunks(text, chunk_size=None):
+def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
     """
     Break text into chunks of specified size.
     
     This is important for working with LLMs that have context length limitations.
-    """
-    if chunk_size is None:
-        chunk_size = current_app.config.get('CHUNK_SIZE', 4000)
+    
+    Args:
+        text: Text to chunk
+        chunk_size: Maximum size of each chunk in characters
         
+    Returns:
+        List of text chunks
+    """
     # Tokenize into sentences to avoid breaking in the middle of a sentence
     sentences = nltk.sent_tokenize(text)
     
-    chunks = []
+    chunks: List[str] = []
     current_chunk = ""
     
     for sentence in sentences:

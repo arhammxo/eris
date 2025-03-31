@@ -1,52 +1,80 @@
+"""
+Web search module for finding relevant URLs.
+
+This module handles searching the web for relevant content based on user queries,
+using SerpAPI with fallback mechanisms for when API keys are not available.
+"""
 import requests
 import json
 import logging
-from flask import current_app
+from typing import Dict, List, Optional, Any, Union
+from quart import current_app
 from serpapi import GoogleSearch
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from modules.utils.types import URL
+from modules.utils.errors import (
+    SearchError, SearchAPIError, NoResultsError, handle_exceptions
+)
+from modules.utils.logging import get_logger, log_function_call
 
-def search_web(query, max_results=5):
+# Create a logger for this module
+logger = get_logger(__name__)
+
+@handle_exceptions(SearchError, "Search failed")
+def search_web(query: str, max_results: int = 5) -> List[URL]:
     """
     Search the web for relevant URLs based on the query.
     
     Args:
-        query (str): The search query
-        max_results (int): Maximum number of results to return
+        query: The search query
+        max_results: Maximum number of results to return
         
     Returns:
-        list: List of relevant URLs
+        List of relevant URLs
+        
+    Raises:
+        SearchError: If search fails
+        NoResultsError: If no results are found
     """
-    try:
-        # Try using SerpAPI if the API key is available
-        api_key = current_app.config.get('SERPAPI_API_KEY')
-        
-        if api_key:
-            return _search_with_serpapi(query, api_key, max_results)
-        else:
-            # Fallback to a basic search approach
-            logger.warning("No SERPAPI_API_KEY found. Using fallback search method.")
-            return _search_fallback(query, max_results)
-            
-    except Exception as e:
-        logger.error(f"Error during search: {str(e)}")
-        return []
+    # Try using SerpAPI if the API key is available
+    api_key = current_app.config.get('SERPAPI_API_KEY')
+    
+    if api_key:
+        return _search_with_serpapi(query, api_key, max_results)
+    else:
+        # Fallback to a basic search approach
+        logger.warning("No SERPAPI_API_KEY found. Using fallback search method.")
+        return _search_fallback(query, max_results)
 
-def _search_with_serpapi(query, api_key, max_results):
-    """Use SerpAPI to search Google."""
+@log_function_call(logger)
+@handle_exceptions(SearchAPIError, "SerpAPI search failed")
+def _search_with_serpapi(query: str, api_key: str, max_results: int) -> List[URL]:
+    """
+    Use SerpAPI to search Google.
+    
+    Args:
+        query: The search query
+        api_key: SerpAPI API key
+        max_results: Maximum number of results to return
+        
+    Returns:
+        List of relevant URLs
+        
+    Raises:
+        SearchAPIError: If SerpAPI search fails
+        NoResultsError: If no results are found
+    """
+    # Request more results than needed
+    requested_results = max(10, max_results)  # At least 10 results
+    
+    params = {
+        "engine": "google",
+        "q": query,
+        "api_key": api_key,
+        "num": requested_results
+    }
+    
     try:
-        # Request more results than needed
-        requested_results = max(10, max_results)  # At least 10 results
-        
-        params = {
-            "engine": "google",
-            "q": query,
-            "api_key": api_key,
-            "num": requested_results
-        }
-        
         search = GoogleSearch(params)
         results = search.get_dict()
         
@@ -85,27 +113,51 @@ def _search_with_serpapi(query, api_key, max_results):
                             logger.warning(f"Error in related search: {str(e)}")
             
             logger.info(f"SerpAPI search found {len(urls)} results, requested {max_results}")
+            
+            if not urls:
+                raise NoResultsError(f"No results found for query: {query}")
+                
             return urls[:max_results]
         else:
             logger.warning("No organic results found in SerpAPI response.")
-            return []
+            raise NoResultsError(f"No organic results found for query: {query}")
             
     except Exception as e:
+        if isinstance(e, NoResultsError):
+            raise
         logger.error(f"SerpAPI search error: {str(e)}")
-        return []
+        raise SearchAPIError(f"Error using SerpAPI: {str(e)}")
 
-def _search_fallback(query, max_results):
+@log_function_call(logger)
+@handle_exceptions(SearchError, "Fallback search failed")
+def _search_fallback(query: str, max_results: int) -> List[URL]:
     """
     Fallback search method when no API key is available.
+    
     Note: This is a basic implementation not recommended for production.
+    
+    Args:
+        query: The search query
+        max_results: Maximum number of results to return
+        
+    Returns:
+        List of relevant URLs
+        
+    Raises:
+        SearchError: If fallback search fails
+        NoResultsError: If no results are found
     """
     try:
         # Using DuckDuckGo API as a fallback (no API key required)
         url = f"https://api.duckduckgo.com/?q={query}&format=json"
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         
         if response.status_code == 200:
-            data = response.json()
+            try:
+                data = response.json()
+            except json.JSONDecodeError:
+                logger.error("Failed to parse DuckDuckGo response as JSON")
+                return _generate_example_urls(query, max_results)
             
             # Extract URLs from results
             urls = []
@@ -122,67 +174,92 @@ def _search_fallback(query, max_results):
             
             # If we still don't have enough results, add some example URLs
             if len(urls) < max_results:
-                example_domains = [
-                    "wikipedia.org", "britannica.com", "nationalgeographic.com",
-                    "sciencedaily.com", "nature.com", "history.com", "healthline.com",
-                    "mayoclinic.org", "medicalnewstoday.com", "webmd.com",
-                    "investopedia.com", "economictimes.com", "nasa.gov"
-                ]
+                urls.extend(_generate_example_urls(query, max_results - len(urls)))
                 
-                for domain in example_domains:
-                    if len(urls) >= max_results:
-                        break
-                    # Create a URL for this domain related to the query
-                    formatted_query = query.replace(" ", "+")
-                    example_url = f"https://www.{domain}/search?q={formatted_query}"
-                    if example_url not in urls:
-                        urls.append(example_url)
-                        
+            if not urls:
+                raise NoResultsError(f"No results found for query: {query}")
+                
             return urls[:max_results]
         else:
             logger.error(f"Fallback search failed with status code: {response.status_code}")
-            return []
+            return _generate_example_urls(query, max_results)
     
+    except requests.RequestException as e:
+        logger.error(f"Request exception in fallback search: {str(e)}")
+        return _generate_example_urls(query, max_results)
     except Exception as e:
+        if isinstance(e, NoResultsError):
+            raise
         logger.error(f"Fallback search error: {str(e)}")
-        # Return a few example URLs for demonstration purposes
-        return [
-            "https://en.wikipedia.org/wiki/Information_retrieval",
-            "https://en.wikipedia.org/wiki/Web_crawler",
-            "https://en.wikipedia.org/wiki/Natural_language_processing",
-            "https://en.wikipedia.org/wiki/Artificial_intelligence",
-            "https://en.wikipedia.org/wiki/Machine_learning",
-            "https://en.wikipedia.org/wiki/Data_mining",
-            "https://en.wikipedia.org/wiki/Text_mining",
-            "https://en.wikipedia.org/wiki/Search_engine_technology",
-            "https://en.wikipedia.org/wiki/Information_extraction",
-            "https://en.wikipedia.org/wiki/Information_science"
-        ][:max_results]
-    
-def search_web_with_config(query, max_results=5, config=None):
+        raise SearchError(f"Fallback search error: {str(e)}")
+
+def _generate_example_urls(query: str, count: int) -> List[URL]:
     """
-    Search the web for relevant URLs based on the query.
+    Generate example URLs for demonstration purposes.
+    
+    Args:
+        query: The search query
+        count: Number of URLs to generate
+        
+    Returns:
+        List of example URLs
+    """
+    logger.warning(f"Generating {count} example URLs for query: {query}")
+    
+    example_domains = [
+        "wikipedia.org", "britannica.com", "nationalgeographic.com",
+        "sciencedaily.com", "nature.com", "history.com", "healthline.com",
+        "mayoclinic.org", "medicalnewstoday.com", "webmd.com",
+        "investopedia.com", "economictimes.com", "nasa.gov"
+    ]
+    
+    # Create URLs for the query
+    formatted_query = query.replace(" ", "+")
+    urls = []
+    
+    # Try to generate Wikipedia URL first
+    wikipedia_url = f"https://en.wikipedia.org/wiki/{formatted_query.replace('+', '_')}"
+    urls.append(wikipedia_url)
+    
+    # Add other domains
+    for domain in example_domains[1:]:  # Skip wikipedia as we already added it
+        if len(urls) >= count:
+            break
+        # Create a URL for this domain related to the query
+        example_url = f"https://www.{domain}/search?q={formatted_query}"
+        if example_url not in urls:
+            urls.append(example_url)
+    
+    return urls[:count]
+
+@handle_exceptions(SearchError, "Search with config failed")
+def search_web_with_config(
+    query: str, 
+    max_results: int = 5, 
+    config: Optional[Dict[str, Any]] = None
+) -> List[URL]:
+    """
+    Search the web using a provided configuration.
+    
     This version accepts config directly instead of using current_app.
     
     Args:
-        query (str): The search query
-        max_results (int): Maximum number of results to return
-        config (dict): Configuration dictionary with API keys and settings
+        query: The search query
+        max_results: Maximum number of results to return
+        config: Configuration dictionary with API keys and settings
         
     Returns:
-        list: List of relevant URLs
-    """
-    try:
-        # Try using SerpAPI if the API key is available
-        api_key = config.get('SERPAPI_API_KEY') if config else None
+        List of relevant URLs
         
-        if api_key:
-            return _search_with_serpapi(query, api_key, max_results)
-        else:
-            # Fallback to a basic search approach
-            logger.warning("No SERPAPI_API_KEY found. Using fallback search method.")
-            return _search_fallback(query, max_results)
-            
-    except Exception as e:
-        logger.error(f"Error during search: {str(e)}")
-        return []
+    Raises:
+        SearchError: If search fails
+    """
+    # Try using SerpAPI if the API key is available
+    api_key = config.get('SERPAPI_API_KEY') if config else None
+    
+    if api_key:
+        return _search_with_serpapi(query, api_key, max_results)
+    else:
+        # Fallback to a basic search approach
+        logger.warning("No SERPAPI_API_KEY found in config. Using fallback search method.")
+        return _search_fallback(query, max_results)
