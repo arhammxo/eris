@@ -158,3 +158,31 @@ def _search_fallback(query, max_results):
             "https://en.wikipedia.org/wiki/Information_extraction",
             "https://en.wikipedia.org/wiki/Information_science"
         ][:max_results]
+    
+def search_web_with_config(query, max_results=5, config=None):
+    """
+    Search the web for relevant URLs based on the query.
+    This version accepts config directly instead of using current_app.
+    
+    Args:
+        query (str): The search query
+        max_results (int): Maximum number of results to return
+        config (dict): Configuration dictionary with API keys and settings
+        
+    Returns:
+        list: List of relevant URLs
+    """
+    try:
+        # Try using SerpAPI if the API key is available
+        api_key = config.get('SERPAPI_API_KEY') if config else None
+        
+        if api_key:
+            return _search_with_serpapi(query, api_key, max_results)
+        else:
+            # Fallback to a basic search approach
+            logger.warning("No SERPAPI_API_KEY found. Using fallback search method.")
+            return _search_fallback(query, max_results)
+            
+    except Exception as e:
+        logger.error(f"Error during search: {str(e)}")
+        return []

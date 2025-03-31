@@ -1,4 +1,6 @@
 flask
+quart
+aiohttp
 requests
 beautifulsoup4
 openai
@@ -8,3 +10,8 @@ serpapi
 lxml
 flask-caching
 google-search-results
+playwright
+readability-lxml
+textstat
+aiofiles
+quart-caching

@@ -1,0 +1,417 @@
+{% extends "base.html" %}
+
+{% block title %}Processing: {{ query }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .progress-container {
+        padding: 2rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+    
+    .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+    
+    .status-pending {
+        background-color: #ccc;
+    }
+    
+    .status-active {
+        background-color: #0d6efd;
+        animation: pulse 1.5s infinite;
+    }
+    
+    .status-complete {
+        background-color: #198754;
+    }
+    
+    .status-error {
+        background-color: #dc3545;
+    }
+    
+    @keyframes pulse {
+        0% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.5;
+        }
+        100% {
+            opacity: 1;
+        }
+    }
+    
+    .step-item {
+        padding: 1rem;
+        border-left: 3px solid #e9ecef;
+        position: relative;
+        margin-bottom: 0.5rem;
+    }
+    
+    .step-item.active {
+        border-left: 3px solid #0d6efd;
+    }
+    
+    .step-item.complete {
+        border-left: 3px solid #198754;
+    }
+    
+    .step-item.error {
+        border-left: 3px solid #dc3545;
+    }
+    
+    .step-icon {
+        position: absolute;
+        left: -12px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background-color: white;
+        border: 2px solid #e9ecef;
+        text-align: center;
+        line-height: 20px;
+    }
+    
+    .step-icon.active {
+        border-color: #0d6efd;
+        background-color: #0d6efd;
+        color: white;
+    }
+    
+    .step-icon.complete {
+        border-color: #198754;
+        background-color: #198754;
+        color: white;
+    }
+    
+    .step-icon.error {
+        border-color: #dc3545;
+        background-color: #dc3545;
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header">
+                <h2 class="mb-0">Processing Your Search</h2>
+            </div>
+            <div class="card-body">
+                <h3 class="card-title mb-4">{{ query }}</h3>
+                
+                <div class="progress-container bg-light">
+                    <h4>
+                        <span class="status-indicator status-active" id="status-indicator"></span>
+                        <span id="status-text">Starting your search...</span>
+                    </h4>
+                    
+                    <div class="progress my-4" style="height: 10px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             id="progress-bar" 
+                             role="progressbar" 
+                             style="width: 0%"
+                             aria-valuenow="0" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100"></div>
+                    </div>
+                    
+                    <p id="progress-message" class="text-muted">Initializing search process...</p>
+                </div>
+                
+                <div class="steps-container mt-5">
+                    <h5 class="mb-3">Search Steps</h5>
+                    
+                    <div class="step-item" id="step-searching">
+                        <div class="step-icon">1</div>
+                        <h6>Web Search</h6>
+                        <p class="text-muted">Finding relevant sources across the web</p>
+                        <div id="search-details" class="small d-none"></div>
+                    </div>
+                    
+                    <div class="step-item" id="step-crawling">
+                        <div class="step-icon">2</div>
+                        <h6>Content Extraction</h6>
+                        <p class="text-muted">Extracting and cleaning content from sources</p>
+                        <div id="crawl-details" class="small d-none"></div>
+                    </div>
+                    
+                    <div class="step-item" id="step-processing">
+                        <div class="step-icon">3</div>
+                        <h6>Content Analysis</h6>
+                        <p class="text-muted">Analyzing content quality and relevance</p>
+                        <div id="processing-details" class="small d-none"></div>
+                    </div>
+                    
+                    <div class="step-item" id="step-summarizing">
+                        <div class="step-icon">4</div>
+                        <h6>Summarization</h6>
+                        <p class="text-muted">Generating comprehensive summary</p>
+                        <div id="summary-details" class="small d-none"></div>
+                    </div>
+                </div>
+                
+                <div class="mt-4 text-center d-none" id="results-ready">
+                    <h5 class="mb-3">Your results are ready!</h5>
+                    <a href="/results/{{ search_id }}" class="btn btn-primary btn-lg">View Results</a>
+                </div>
+                
+                <div class="mt-4 text-center d-none" id="error-container">
+                    <div class="alert alert-danger" id="error-message">
+                        An error occurred while processing your search.
+                    </div>
+                    <a href="/" class="btn btn-outline-primary">Try Another Search</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchId = '{{ search_id }}';
+        let socket;
+        
+        // Elements
+        const progressBar = document.getElementById('progress-bar');
+        const statusText = document.getElementById('status-text');
+        const statusIndicator = document.getElementById('status-indicator');
+        const progressMessage = document.getElementById('progress-message');
+        const resultsReady = document.getElementById('results-ready');
+        const errorContainer = document.getElementById('error-container');
+        const errorMessage = document.getElementById('error-message');
+        
+        // Step elements
+        const steps = {
+            'starting': null,
+            'searching': document.getElementById('step-searching'),
+            'crawling': document.getElementById('step-crawling'),
+            'processing': document.getElementById('step-processing'),
+            'summarizing': document.getElementById('step-summarizing'),
+        };
+        
+        // Detail containers
+        const details = {
+            'searching': document.getElementById('search-details'),
+            'crawling': document.getElementById('crawl-details'),
+            'processing': document.getElementById('processing-details'),
+            'summarizing': document.getElementById('summary-details')
+        };
+        
+        function updateProgress(data) {
+            // Update progress bar
+            const progress = data.progress || 0;
+            progressBar.style.width = `${progress}%`;
+            progressBar.setAttribute('aria-valuenow', progress);
+            
+            // Update status text and indicator
+            const status = data.status || 'starting';
+            statusText.textContent = getStatusText(status);
+            
+            // Update indicator class
+            statusIndicator.className = 'status-indicator';
+            if (status === 'complete') {
+                statusIndicator.classList.add('status-complete');
+            } else if (status === 'error') {
+                statusIndicator.classList.add('status-error');
+            } else {
+                statusIndicator.classList.add('status-active');
+            }
+            
+            // Update message
+            if (data.data && data.data.message) {
+                progressMessage.textContent = data.data.message;
+            }
+            
+            // Update step status
+            updateSteps(status);
+            
+            // Update step details
+            if (data.data) {
+                updateStepDetails(status, data.data);
+            }
+            
+            // Handle completion or error
+            if (status === 'complete') {
+                resultsReady.classList.remove('d-none');
+                // Redirect after a short delay
+                setTimeout(() => {
+                    window.location.href = `/results/${searchId}`;
+                }, 2000);
+            } else if (status === 'error') {
+                errorContainer.classList.remove('d-none');
+                if (data.data && data.data.message) {
+                    errorMessage.textContent = data.data.message;
+                }
+            }
+        }
+        
+        function getStatusText(status) {
+            switch(status) {
+                case 'starting':
+                    return 'Starting your search...';
+                case 'searching':
+                    return 'Searching for relevant sources...';
+                case 'crawling':
+                    return 'Extracting content from sources...';
+                case 'processing':
+                    return 'Analyzing and processing content...';
+                case 'summarizing':
+                    return 'Generating your summary...';
+                case 'complete':
+                    return 'Search complete!';
+                case 'error':
+                    return 'An error occurred';
+                default:
+                    return 'Processing your search...';
+            }
+        }
+        
+        function updateSteps(currentStatus) {
+            const statuses = ['searching', 'crawling', 'processing', 'summarizing'];
+            const currentIndex = statuses.indexOf(currentStatus);
+            
+            statuses.forEach((status, index) => {
+                const step = steps[status];
+                if (!step) return;
+                
+                // Reset classes
+                step.className = 'step-item';
+                const icon = step.querySelector('.step-icon');
+                icon.className = 'step-icon';
+                
+                if (currentStatus === 'error') {
+                    // If there's an error, mark the current step as error
+                    if (index === currentIndex) {
+                        step.classList.add('error');
+                        icon.classList.add('error');
+                    } else if (index < currentIndex) {
+                        step.classList.add('complete');
+                        icon.classList.add('complete');
+                    }
+                } else if (currentStatus === 'complete') {
+                    // All steps complete
+                    step.classList.add('complete');
+                    icon.classList.add('complete');
+                } else {
+                    // Normal processing
+                    if (index < currentIndex) {
+                        step.classList.add('complete');
+                        icon.classList.add('complete');
+                    } else if (index === currentIndex) {
+                        step.classList.add('active');
+                        icon.classList.add('active');
+                    }
+                }
+            });
+        }
+        
+        function updateStepDetails(status, data) {
+            const detailContainer = details[status];
+            if (!detailContainer) return;
+            
+            // Add details based on status
+            if (status === 'searching' && data.urls_found) {
+                detailContainer.innerHTML = `Found ${data.urls_found} potential sources to analyze`;
+                detailContainer.classList.remove('d-none');
+            } else if (status === 'crawling' && data.sources_found) {
+                detailContainer.innerHTML = `Successfully extracted content from ${data.sources_found} sources`;
+                detailContainer.classList.remove('d-none');
+            } else if (status === 'processing' && data.sources_processed) {
+                detailContainer.innerHTML = `Processed ${data.sources_processed} sources for analysis`;
+                detailContainer.classList.remove('d-none');
+            } else if (status === 'summarizing' && data.summary_length) {
+                detailContainer.innerHTML = `Generated a ${data.summary_length} character summary`;
+                detailContainer.classList.remove('d-none');
+            }
+        }
+        
+        function connectWebSocket() {
+            // Create WebSocket connection
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/progress/${searchId}`;
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function(e) {
+                console.log('WebSocket connection established');
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                updateProgress(data);
+                
+                // If we have a redirect, follow it
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                }
+            };
+            
+            socket.onclose = function(event) {
+                if (!event.wasClean) {
+                    console.log('WebSocket connection lost. Reconnecting...');
+                    setTimeout(connectWebSocket, 1000); // Try to reconnect after 1 second
+                }
+            };
+            
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                // Fallback to polling if WebSocket fails
+                startPolling();
+            };
+        }
+        
+        let pollingInterval;
+        function startPolling() {
+            // Fall back to polling if WebSocket isn't available
+            pollingInterval = setInterval(async function() {
+                try {
+                    const response = await fetch(`/api/status/${searchId}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        updateProgress(data);
+                        
+                        // Stop polling when complete or error
+                        if (data.status === 'complete' || data.status === 'error') {
+                            clearInterval(pollingInterval);
+                        }
+                    } else {
+                        console.error('Error fetching status');
+                    }
+                } catch (error) {
+                    console.error('Polling error:', error);
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+        
+        // Start by connecting WebSocket
+        try {
+            connectWebSocket();
+        } catch (error) {
+            console.error('Could not establish WebSocket connection:', error);
+            startPolling();
+        }
+        
+        // Clean up when leaving page
+        window.addEventListener('beforeunload', function() {
+            if (socket) {
+                socket.close();
+            }
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+        });
+    });
+</script>
+{% endblock %}
