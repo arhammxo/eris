@@ -13,7 +13,34 @@
             <div class="card-body">
                 <h3 class="card-title">{{ query }}</h3>
                 <hr>
-                <div class="summary-content">
+                
+                <!-- Speech controls -->
+                <div class="speech-controls mb-3">
+                    <div class="d-flex align-items-center mb-2">
+                        <button id="tts-play-btn" class="btn btn-sm btn-primary me-2">
+                            <i class="bi bi-play-fill"></i> Listen
+                        </button>
+                        <button id="tts-pause-btn" class="btn btn-sm btn-outline-secondary me-2" disabled>
+                            <i class="bi bi-pause-fill"></i> Pause
+                        </button>
+                        <button id="tts-stop-btn" class="btn btn-sm btn-outline-secondary me-3" disabled>
+                            <i class="bi bi-stop-fill"></i> Stop
+                        </button>
+                        <div class="speed-control d-flex align-items-center">
+                            <label for="tts-rate" class="form-label me-2 mb-0">Speed:</label>
+                            <input type="range" class="form-range" min="0.5" max="2" step="0.1" value="1" id="tts-rate">
+                            <span id="tts-rate-value" class="ms-2">1x</span>
+                        </div>
+                    </div>
+                    <div class="voice-selector">
+                        <select id="tts-voice" class="form-select form-select-sm" style="width: auto;">
+                            <option value="">Default Voice</option>
+                        </select>
+                    </div>
+                    <div id="tts-status" class="text-muted small mt-1" aria-live="polite"></div>
+                </div>
+                
+                <div class="summary-content" id="summary-content">
                     {{ summary|safe }}
                 </div>
             </div>
@@ -91,8 +118,12 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Inline script for direct text-to-speech functionality -->
 <script>
-    // Copy summary to clipboard
+    // Immediately log to test if script is executing
+    console.log('TTS Script loading...');
+    
+    // Copy summary functionality
     document.getElementById('copy-summary').addEventListener('click', function() {
         const summaryText = document.querySelector('.summary-content').innerText;
         navigator.clipboard.writeText(summaryText)
@@ -108,7 +139,7 @@
             });
     });
     
-    // Share functionality (simplified)
+    // Share functionality
     document.getElementById('share-button').addEventListener('click', function() {
         if (navigator.share) {
             navigator.share({
@@ -123,5 +154,250 @@
             alert('Web Share API not supported in your browser');
         }
     });
+    
+    // Initialize text-to-speech functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, initializing text-to-speech');
+        
+        // Check if Speech Synthesis is supported
+        if (!('speechSynthesis' in window)) {
+            console.error('Text-to-Speech not supported in this browser');
+            document.querySelector('.speech-controls').style.display = 'none';
+            return;
+        }
+        
+        console.log('Speech Synthesis API is available');
+        
+        // Elements
+        const playBtn = document.getElementById('tts-play-btn');
+        const pauseBtn = document.getElementById('tts-pause-btn');
+        const stopBtn = document.getElementById('tts-stop-btn');
+        const rateSlider = document.getElementById('tts-rate');
+        const rateValue = document.getElementById('tts-rate-value');
+        const voiceSelect = document.getElementById('tts-voice');
+        const statusElement = document.getElementById('tts-status');
+        const summaryContent = document.getElementById('summary-content');
+        
+        // Check if all elements exist
+        if (!playBtn || !pauseBtn || !stopBtn || !summaryContent) {
+            console.error('Required elements missing:', { 
+                playBtn: !!playBtn, 
+                pauseBtn: !!pauseBtn, 
+                stopBtn: !!stopBtn, 
+                summaryContent: !!summaryContent 
+            });
+            return;
+        }
+        
+        console.log('All required elements found');
+        
+        // State
+        let utterance = null;
+        let isPaused = false;
+        
+        // Simple speak function - core functionality
+        function speak() {
+            console.log('Speaking function called');
+            
+            if (window.speechSynthesis.speaking) {
+                console.log('Already speaking, canceling first');
+                window.speechSynthesis.cancel();
+            }
+            
+            // Get summary text
+            const text = summaryContent.textContent || summaryContent.innerText;
+            
+            if (!text || text.trim() === '') {
+                console.warn('No text content to speak');
+                updateStatus('No text content to speak');
+                return;
+            }
+            
+            console.log(`Creating utterance with ${text.length} characters`);
+            
+            // Create utterance
+            utterance = new SpeechSynthesisUtterance(text);
+            
+            // Set rate if available
+            if (rateSlider) {
+                utterance.rate = parseFloat(rateSlider.value);
+                console.log(`Speaking at rate: ${utterance.rate}x`);
+            }
+            
+            // Set voice if selected
+            if (voiceSelect && voiceSelect.selectedIndex > 0) {
+                const voices = window.speechSynthesis.getVoices();
+                const selectedOption = voiceSelect.options[voiceSelect.selectedIndex];
+                
+                for (const voice of voices) {
+                    if (voice.name === selectedOption.textContent.split(' (')[0]) {
+                        utterance.voice = voice;
+                        console.log(`Selected voice: ${voice.name}`);
+                        break;
+                    }
+                }
+            }
+            
+            // Add event handlers
+            utterance.onstart = function() {
+                console.log('Speech started');
+                updateControlsState(true);
+                updateStatus('Speaking...');
+            };
+            
+            utterance.onend = function() {
+                console.log('Speech ended');
+                updateControlsState(false);
+                updateStatus('Finished speaking');
+            };
+            
+            utterance.onerror = function(e) {
+                console.error('Speech error:', e);
+                updateControlsState(false);
+                updateStatus('Error: ' + (e.error || 'unknown error'));
+            };
+            
+            // Start speaking
+            try {
+                console.log('Starting speech synthesis');
+                window.speechSynthesis.speak(utterance);
+            } catch (error) {
+                console.error('Error starting speech:', error);
+                updateStatus('Error starting speech');
+            }
+        }
+        
+        // Pause or resume
+        function togglePause() {
+            if (window.speechSynthesis.speaking) {
+                if (isPaused) {
+                    console.log('Resuming speech');
+                    window.speechSynthesis.resume();
+                    isPaused = false;
+                    pauseBtn.innerHTML = '<i class="bi bi-pause-fill"></i> Pause';
+                    updateStatus('Resumed speaking');
+                } else {
+                    console.log('Pausing speech');
+                    window.speechSynthesis.pause();
+                    isPaused = true;
+                    pauseBtn.innerHTML = '<i class="bi bi-play-fill"></i> Resume';
+                    updateStatus('Paused');
+                }
+            }
+        }
+        
+        // Stop speaking
+        function stopSpeaking() {
+            if (window.speechSynthesis.speaking) {
+                console.log('Stopping speech');
+                window.speechSynthesis.cancel();
+                updateControlsState(false);
+                updateStatus('Stopped');
+            }
+        }
+        
+        // Update controls state
+        function updateControlsState(isSpeaking) {
+            playBtn.disabled = isSpeaking;
+            pauseBtn.disabled = !isSpeaking;
+            stopBtn.disabled = !isSpeaking;
+        }
+        
+        // Update status display
+        function updateStatus(message) {
+            console.log('Status:', message);
+            if (statusElement) {
+                if (message === 'Speaking...' || message === 'Resumed speaking') {
+                    statusElement.innerHTML = '<span class="speaking-indicator"></span> ' + message;
+                } else {
+                    statusElement.textContent = message;
+                }
+            }
+        }
+        
+        // Populate voice list
+        function populateVoiceList() {
+            console.log('Populating voice list');
+            
+            if (!voiceSelect) return;
+            
+            // Clear existing options (keeping the default)
+            while (voiceSelect.options.length > 1) {
+                voiceSelect.remove(1);
+            }
+            
+            // Get available voices
+            const voices = window.speechSynthesis.getVoices();
+            console.log(`Found ${voices.length} voices`);
+            
+            if (voices.length === 0) {
+                // Try again later if no voices yet
+                setTimeout(populateVoiceList, 100);
+                return;
+            }
+            
+            // Add options for each voice
+            for (const voice of voices) {
+                const option = document.createElement('option');
+                option.textContent = voice.name + ' (' + voice.lang + ')';
+                
+                // Select English voice if available
+                if (voice.lang && voice.lang.startsWith('en-') && voice.default) {
+                    option.selected = true;
+                }
+                
+                voiceSelect.appendChild(option);
+            }
+        }
+        
+        // Attempt to load voices and set up event for when they change
+        populateVoiceList();
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            console.log('Setting up onvoiceschanged event');
+            window.speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+        
+        // Add event listeners
+        console.log('Setting up event listeners');
+        
+        playBtn.addEventListener('click', function() {
+            console.log('Play button clicked');
+            speak();
+        });
+        
+        pauseBtn.addEventListener('click', function() {
+            console.log('Pause button clicked');
+            togglePause();
+        });
+        
+        stopBtn.addEventListener('click', function() {
+            console.log('Stop button clicked');
+            stopSpeaking();
+        });
+        
+        if (rateSlider && rateValue) {
+            rateSlider.addEventListener('input', function() {
+                const rate = this.value;
+                console.log('Rate changed to:', rate);
+                rateValue.textContent = rate + 'x';
+            });
+        }
+        
+        // Chrome bug fix - speech stops after ~60 seconds
+        if (/Chrome/.test(navigator.userAgent)) {
+            console.log('Chrome detected, adding speech synthesis fix');
+            setInterval(function() {
+                if (window.speechSynthesis.speaking && !isPaused) {
+                    window.speechSynthesis.pause();
+                    window.speechSynthesis.resume();
+                }
+            }, 10000); // Every 10 seconds
+        }
+        
+        updateStatus('Ready to speak');
+        console.log('Text-to-speech initialization complete');
+    });
+    
+    console.log('TTS Script loaded');
 </script>
 {% endblock %}

@@ -192,3 +192,78 @@ footer {
         opacity: 1;
     }
 }
+
+/* Speech synthesis styles */
+.speech-controls {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+}
+
+.speed-control {
+    width: 200px;
+}
+
+.form-range {
+    height: 1.5rem;
+}
+
+.voice-selector {
+    max-width: 300px;
+}
+
+.speech-highlighting {
+    background-color: rgba(13, 110, 253, 0.1);
+    border-radius: 2px;
+}
+
+.speech-highlighting.active {
+    background-color: rgba(13, 110, 253, 0.2);
+    border-left: 3px solid #0d6efd;
+    padding-left: 5px;
+    transition: background-color 0.3s ease;
+}
+
+/* Control button hover effects */
+#tts-play-btn:hover {
+    background-color: #0b5ed7;
+}
+
+#tts-pause-btn:hover, #tts-stop-btn:hover {
+    background-color: #e9ecef;
+}
+
+/* Status animation for speaking */
+@keyframes speaking-pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
+
+.speaking-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #0d6efd;
+    margin-right: 5px;
+    animation: speaking-pulse 1.5s infinite;
+}
+
+/* Added for responsiveness on mobile devices */
+@media (max-width: 576px) {
+    .speech-controls {
+        flex-direction: column;
+    }
+    
+    .speed-control {
+        margin-top: 10px;
+        width: 100%;
+    }
+    
+    .voice-selector {
+        margin-top: 10px;
+        max-width: 100%;
+    }
+}
