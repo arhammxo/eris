@@ -18,7 +18,7 @@ playwright
 Brotli
 
 # API Integrations
-openai>=1.0.0
+openai
 google-search-results>=2.4.2  # SerpAPI client
 serpapi>=0.1.0
 
