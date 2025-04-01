@@ -401,6 +401,7 @@ async def generate_combined_summary(
         3. Cite sources for specific facts using (Source: domain) format
         4. Organize the information logically 
         5. Maintain a balanced, helpful tone
+        6. Output ALWAYS in a formated markdown view
         
         Combined Summary:
         """

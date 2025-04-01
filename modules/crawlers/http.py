@@ -122,8 +122,20 @@ class HTTPCrawler:
             if not new_tasks:
                 break
                 
-            # Wait for tasks to complete
-            results = await asyncio.gather(*new_tasks, return_exceptions=True)
+            # Wait for tasks to complete with overall timeout
+            try:
+                results = await asyncio.wait_for(
+                    asyncio.gather(*new_tasks, return_exceptions=True),
+                    timeout=self.timeout * 2  # Double the normal timeout for gather
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout while gathering crawl results for batch of {len(new_tasks)} URLs")
+                # Cancel any pending tasks
+                for task in new_tasks:
+                    if not task.done():
+                        task.cancel()
+                # Just use whatever results we got so far
+                results = [None] * len(new_tasks)
             
             # Process results
             for result in results:
@@ -142,7 +154,27 @@ class HTTPCrawler:
     @handle_async_exceptions(CrawlerError, "Failed to crawl URL")
     async def crawl_url(self, url: URL) -> Optional[Source]:
         """
-        Crawl a single URL and extract content.
+        Crawl a single URL and extract content with timeout.
+        
+        Args:
+            url: URL to crawl
+            
+        Returns:
+            Source with extracted content or None if extraction failed
+        """
+        # Add an overall timeout to prevent hanging
+        try:
+            return await asyncio.wait_for(
+                self._crawl_url_internal(url), 
+                timeout=self.timeout * 3  # Triple the normal timeout as a safety net
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout when crawling URL: {url}")
+            raise HTTPError(f"Timeout when crawling URL: {url}")
+    
+    async def _crawl_url_internal(self, url: URL) -> Optional[Source]:
+        """
+        Internal implementation of crawl_url.
         
         Args:
             url: URL to crawl
@@ -199,11 +231,14 @@ class HTTPCrawler:
                 try:
                     logger.info(f"Request attempt {attempt+1} for URL: {url}")
                     
-                    response = await session.get(
-                        url, 
-                        headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=self.timeout),
-                        allow_redirects=True
+                    # Add timeout for each request
+                    response = await asyncio.wait_for(
+                        session.get(
+                            url, 
+                            headers=headers,
+                            allow_redirects=True
+                        ),
+                        timeout=self.timeout
                     )
                     
                     if response.status == 200:
@@ -243,8 +278,14 @@ class HTTPCrawler:
             )
         
         try:
-            # Parse the HTML content
-            html_content = await response.text()
+            # Parse the HTML content with timeout
+            html_content_future = response.text()
+            try:
+                html_content = await asyncio.wait_for(html_content_future, timeout=self.timeout)
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout reading response content from {url}")
+                raise HTTPError(f"Timeout reading response from {url}")
+                
             soup = BeautifulSoup(html_content, 'lxml')
             
             # Extract content

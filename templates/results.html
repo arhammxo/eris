@@ -41,7 +41,11 @@
                 </div>
                 
                 <div class="summary-content" id="summary-content">
-                    {{ summary|safe }}
+                    {% if summary %}
+                        {{ summary|markdown|safe }}
+                    {% else %}
+                        <p>No summary available.</p>
+                    {% endif %}
                 </div>
             </div>
         </div>

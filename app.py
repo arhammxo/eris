@@ -13,6 +13,9 @@ from datetime import datetime
 import logging
 import os
 
+import nest_asyncio
+nest_asyncio.apply()
+
 # Import application modules
 from modules.search import search_web, search_web_with_config, search_combined
 from modules.crawlers import crawl_urls, cleanup_crawlers, IntegratedCrawler
@@ -21,7 +24,46 @@ from modules.processor import process_text
 from modules.summarizer import generate_summary
 from modules.utils.errors import WebSummarizerError, create_error_response
 from modules.utils.logging import setup_logging, get_logger
+from modules.utils.markdown import render_markdown
 from config import Config
+
+def register_template_filters(app):
+    @app.template_filter('timestamp_to_datetime')
+    def timestamp_to_datetime(timestamp):
+        """Convert a Unix timestamp to a formatted datetime string."""
+        if not timestamp:
+            return ''
+        return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    
+    @app.template_filter('markdown')
+    def markdown_filter(text):
+        """Template filter to render markdown."""
+        if not text:
+            return ""
+        
+        try:
+            # Simple inline implementation without external dependencies
+            import re
+            from markupsafe import Markup
+            
+            # Convert headers (simple implementation)
+            text = re.sub(r'^#\s+(.*?)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
+            text = re.sub(r'^##\s+(.*?)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+            text = re.sub(r'^###\s+(.*?)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+            
+            # Convert bold and italic
+            text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+            text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
+            
+            # Convert paragraphs (simple approach)
+            paragraphs = text.split('\n\n')
+            text = ''.join([f'<p>{p}</p>' for p in paragraphs if p.strip()])
+            
+            return Markup(text)
+        except Exception as e:
+            logger.error(f"Error rendering markdown: {str(e)}")
+            # Return plain text on error
+            return text
 
 # Initialize logging
 setup_logging(
@@ -43,6 +85,9 @@ cache = Cache(app)
 # Background tasks store
 background_tasks = {}
 
+register_template_filters(app)
+
+
 # Register Jinja2 filters
 @app.template_filter('timestamp_to_datetime')
 def timestamp_to_datetime(timestamp):
@@ -55,6 +100,17 @@ def timestamp_to_datetime(timestamp):
 async def index():
     """Render the search form."""
     return await render_template('index.html')
+
+@app.template_filter('markdown')
+def markdown_filter(text):
+    """Template filter to render markdown."""
+    try:
+        return render_markdown(text)
+    except Exception as e:
+        logger.error(f"Error rendering markdown: {str(e)}")
+        # Return escaped text as fallback
+        from markupsafe import escape
+        return escape(text)
 
 async def process_search(search_id, query, depth, summary_length, search_scope='web'):
     """
