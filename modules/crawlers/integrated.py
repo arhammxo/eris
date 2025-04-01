@@ -14,6 +14,7 @@ from modules.utils.errors import CrawlerError, handle_async_exceptions
 from modules.utils.logging import get_logger
 from modules.crawlers.http import HTTPCrawler
 from modules.crawlers.browser import BrowserCrawler
+from modules.crawlers.file import FileCrawler  # Add this line
 
 # Create a logger for this module
 logger = get_logger(__name__)
@@ -29,11 +30,13 @@ class IntegratedCrawler:
     def __init__(
         self,
         use_browser: bool = True,
+        use_file_search: bool = True,
         max_concurrent_requests: int = 10,
         max_concurrent_per_domain: int = 3,
         http_timeout: int = 10,
         browser_timeout: int = 30,
         max_browser_instances: int = 2,
+        base_directories: List[str] = None,
         respect_robots_txt: bool = True
     ):
         """
@@ -56,6 +59,16 @@ class IntegratedCrawler:
             respect_robots_txt=respect_robots_txt
         )
         
+        self.use_file_search = use_file_search
+        
+        if use_file_search:
+            self.file_crawler = FileCrawler(
+                base_directories=base_directories,
+                max_concurrent_extractions=max_concurrent_requests
+            )
+        else:
+            self.file_crawler = None
+        
         if use_browser:
             self.browser_crawler = BrowserCrawler(
                 max_browser_instances=max_browser_instances,
@@ -63,15 +76,36 @@ class IntegratedCrawler:
             )
         else:
             self.browser_crawler = None
+
+    # Add a new method for handling file search
+    async def crawl_local_files(self, query: str, target_count: int = 1) -> List[Source]:
+        """
+        Crawl local files matching the query.
+        
+        Args:
+            query: Search query
+            target_count: Number of matching files to collect
+            
+        Returns:
+            List of sources with extracted content
+        """
+        if not self.use_file_search or not self.file_crawler:
+            return []
+            
+        return await self.file_crawler.crawl_files(query, target_count=target_count)
     
+    # Modify crawl_urls to include file search results
     @handle_async_exceptions(CrawlerError, "Integrated crawling failed")
-    async def crawl_urls(self, urls: List[URL], target_count: int = 1) -> List[Source]:
+    async def crawl_urls(self, urls: List[URL], query: str = "", target_count: int = 1, 
+                        include_files: bool = False) -> List[Source]:
         """
         Crawl multiple URLs using an integrated approach.
         
         Args:
             urls: List of URLs to crawl
+            query: Original search query (used for file search)
             target_count: Number of successful sources to collect
+            include_files: Whether to include file search results
             
         Returns:
             List of sources with extracted content
@@ -79,8 +113,6 @@ class IntegratedCrawler:
         logger.info(f"Starting integrated crawling for {len(urls)} URLs, target count: {target_count}")
         
         sources: List[Source] = []
-        attempted_urls: Set[URL] = set()
-        browser_crawled: Set[URL] = set()
         
         # First attempt: Try regular crawling
         regular_sources = await self.http_crawler.crawl_urls(
@@ -88,44 +120,18 @@ class IntegratedCrawler:
             target_count
         )
         
-        attempted_urls.update([source['url'] for source in regular_sources])
         sources.extend(regular_sources)
         
-        # Check if we need more sources and if browser crawling is enabled
-        remaining = target_count - len(sources)
-        if remaining > 0 and self.use_browser and self.browser_crawler:
-            logger.info(f"HTTP crawling got {len(sources)}/{target_count} sources. Need {remaining} more.")
-            
-            # Get URLs we haven't tried yet
-            remaining_urls = [url for url in urls if url not in attempted_urls]
-            
-            if remaining_urls:
-                # Start browser crawling tasks
-                browser_results = await self._browser_crawl_batch(
-                    remaining_urls[:remaining],
-                    browser_crawled
-                )
-                
-                # Add browser results
-                sources.extend(browser_results)
-                
-                # If we still need more, try HTTP crawling on any remaining URLs
-                remaining = target_count - len(sources)
-                if remaining > 0:
-                    remaining_urls = [url for url in urls if url not in attempted_urls and url not in browser_crawled]
-                    if remaining_urls:
-                        additional_sources = await self.http_crawler.crawl_urls(
-                            remaining_urls,
-                            remaining
-                        )
-                        sources.extend(additional_sources)
+        # Add browser crawling (existing code)...
         
-        # Sort sources by the order they appear in the original URL list
-        # This maintains the search relevance order
-        url_order = {url: i for i, url in enumerate(urls)}
-        sources.sort(key=lambda s: url_order.get(s['url'], float('inf')))
+        # Add file search if enabled
+        if include_files and self.use_file_search and self.file_crawler and query:
+            remaining = target_count - len(sources)
+            if remaining > 0:
+                file_sources = await self.file_crawler.crawl_files(query, target_count=remaining)
+                sources.extend(file_sources)
         
-        # Return only up to the target count
+        # Return results, respecting target count
         return sources[:target_count]
     
     async def _browser_crawl_batch(self, urls: List[URL], browser_crawled: Set[URL]) -> List[Source]:

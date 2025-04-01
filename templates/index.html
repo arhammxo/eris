@@ -39,8 +39,9 @@
                         </div>
                     </div>
                     
+                    <!-- Update templates/index.html -->
                     <div class="row mb-3">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label for="depth" class="form-label">Search Depth</label>
                             <select class="form-select" id="depth" name="depth">
                                 <option value="3" selected>Standard (3 sources)</option>
@@ -50,7 +51,7 @@
                             <div class="form-text">How many sources to analyze</div>
                         </div>
                         
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label for="summary_length" class="form-label">Summary Length</label>
                             <select class="form-select" id="summary_length" name="summary_length">
                                 <option value="short">Short</option>
@@ -58,6 +59,16 @@
                                 <option value="long">Long</option>
                             </select>
                             <div class="form-text">How detailed you want the summary</div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <label for="search_scope" class="form-label">Search Scope</label>
+                            <select class="form-select" id="search_scope" name="search_scope">
+                                <option value="web" selected>Web Only</option>
+                                <option value="files">Local Files Only</option>
+                                <option value="both">Web & Local Files</option>
+                            </select>
+                            <div class="form-text">Where to search for information</div>
                         </div>
                     </div>
                     

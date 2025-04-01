@@ -196,3 +196,16 @@ def create_error_response(error: Union[WebSummarizerError, Exception]) -> Dict[s
             'message': str(error),
             'status': 'error'
         }
+    
+# File-related exceptions
+class FileError(WebSummarizerError):
+    """Base class for file-related errors."""
+    pass
+
+class FileExtractionError(FileError):
+    """Error during file content extraction."""
+    pass
+
+class FileAccessError(FileError):
+    """Error accessing a file."""
+    pass

@@ -47,3 +47,19 @@ class Config:
     
     # Progress tracking
     ENABLE_PROGRESS_TRACKING = os.environ.get('ENABLE_PROGRESS_TRACKING', 'True').lower() == 'true'
+
+    # File search settings
+    FILE_SEARCH_ENABLED = os.environ.get('FILE_SEARCH_ENABLED', 'True').lower() == 'true'
+    BASE_DIRECTORIES = os.environ.get('BASE_DIRECTORIES', '')
+    if not BASE_DIRECTORIES:
+        # Add default directories if none specified
+        if os.name == 'nt':  # Windows
+            BASE_DIRECTORIES = os.path.join(os.path.expanduser('~'), 'Documents')
+        else:  # Unix-like
+            BASE_DIRECTORIES = os.path.join(os.path.expanduser('~'), 'Documents')
+            
+    BASE_DIRECTORIES = BASE_DIRECTORIES.split(',')
+    MAX_FILE_SIZE_MB = int(os.environ.get('MAX_FILE_SIZE_MB', 20))
+    SUPPORTED_FILE_EXTENSIONS = os.environ.get('SUPPORTED_FILE_EXTENSIONS', 
+                                             '.txt,.pdf,.docx,.doc,.md,.csv,.json,.xml,.html,.htm,.rtf').split(',')
+    MAX_CONCURRENT_EXTRACTIONS = int(os.environ.get('MAX_CONCURRENT_EXTRACTIONS', 5))

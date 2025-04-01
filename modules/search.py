@@ -263,3 +263,35 @@ def search_web_with_config(
         # Fallback to a basic search approach
         logger.warning("No SERPAPI_API_KEY found in config. Using fallback search method.")
         return _search_fallback(query, max_results)
+
+@handle_exceptions(SearchError, "Search failed")
+def search_combined(query: str, max_results: int = 5, search_scope: str = 'web') -> tuple[List[URL], bool]:
+    """
+    Perform a combined search using both web and local file sources.
+    
+    Args:
+        query: The search query
+        max_results: Maximum number of results to return
+        search_scope: Where to search ('web', 'files', or 'both')
+        
+    Returns:
+        Tuple of (list of relevant URLs, bool indicating if files were included)
+    """
+    include_web = search_scope in ['web', 'both']
+    include_files = search_scope in ['files', 'both']
+    
+    web_urls = []
+    
+    # Get web results if needed
+    if include_web:
+        web_results_count = max_results
+        if include_files:
+            web_results_count = max(1, int(max_results * 0.7))  # 70% web, 30% files
+        
+        web_urls = search_web(query, max_results=web_results_count)
+    
+    # Check if file search is enabled
+    file_search_enabled = current_app.config.get('FILE_SEARCH_ENABLED', False) and include_files
+    
+    # Return results
+    return web_urls, file_search_enabled

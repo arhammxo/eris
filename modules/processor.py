@@ -8,6 +8,16 @@ import asyncio
 import re
 from typing import Dict, List, Optional, Any
 
+# import nltk
+# try:
+#     nltk.data.find('tokenizers/punkt')
+# except LookupError:
+#     nltk.download('punkt', quiet=True)
+# try:
+#     nltk.data.find('corpora/stopwords')
+# except LookupError:
+#     nltk.download('stopwords', quiet=True)
+
 import nltk
 from nltk.corpus import stopwords
 
@@ -202,8 +212,10 @@ def extract_important_sentences(text: str, num_sentences: int = 5) -> List[str]:
         return important_sentences
         
     except Exception as e:
-        logger.error(f"Error extracting important sentences: {str(e)}")
-        raise TextAnalysisError(f"Failed to extract important sentences: {str(e)}")
+        logger.warning(f"Error in NLTK extraction: {str(e)}")
+        # Simple fallback - just split by period and take first few sentences
+        sentences = [s.strip() for s in text.split('.') if s.strip()]
+        return sentences[:num_sentences]
 
 def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
     """

@@ -14,8 +14,9 @@ import logging
 import os
 
 # Import application modules
-from modules.search import search_web, search_web_with_config
-from modules.crawlers import crawl_urls, cleanup_crawlers
+from modules.search import search_web, search_web_with_config, search_combined
+from modules.crawlers import crawl_urls, cleanup_crawlers, IntegratedCrawler
+from modules.crawlers.file import FileCrawler
 from modules.processor import process_text
 from modules.summarizer import generate_summary
 from modules.utils.errors import WebSummarizerError, create_error_response
@@ -55,7 +56,7 @@ async def index():
     """Render the search form."""
     return await render_template('index.html')
 
-async def process_search(search_id, query, depth, summary_length):
+async def process_search(search_id, query, depth, summary_length, search_scope='web'):
     """
     Asynchronous background task to process a search query.
     
@@ -71,29 +72,60 @@ async def process_search(search_id, query, depth, summary_length):
         Result dictionary or None if processing failed
     """
     try:
+
+        # Log search scope
+        logger.info(f"Processing search with scope: {search_scope}")
+
         # Update progress - Starting search
         update_progress(search_id, 'searching', 10, {
             'message': 'Searching for relevant sources...'
         })
+
+        # Configure search based on scope
+        include_web = search_scope in ['web', 'both']
+        include_files = search_scope in ['files', 'both']
+
+        # Log base directories when file search is enabled
+        if include_files:
+            async with app.app_context():
+                base_dirs = app.config.get('BASE_DIRECTORIES', [])
+                logger.info(f"File search enabled with base directories: {base_dirs}")
+                
+                # Check if directories exist
+                valid_dirs = [d for d in base_dirs if d and os.path.exists(d)]
+                logger.info(f"Valid base directories: {valid_dirs}")
+                
+                if not valid_dirs:
+                    logger.warning("No valid base directories found for file search")
+                    update_progress(search_id, 'warning', 10, {
+                        'message': 'No valid directories configured for file search.'
+                    })
         
-        # Step 1: Search the web for relevant URLs
-        buffer_factor = 2  # Request 2x the URLs to account for failures
+        urls = []
+        has_file_results = False
         
-        # Create a copy of the app's config values needed for search
-        search_config = {}
-        async with app.app_context():
-            search_config['SERPAPI_API_KEY'] = app.config.get('SERPAPI_API_KEY')
-            search_config['MAX_URLS_TO_CRAWL'] = app.config.get('MAX_URLS_TO_CRAWL')
+        # Step 1: Search based on specified scope
+        if include_web:
+            # Web search
+            buffer_factor = 2
+            search_config = {}
+            async with app.app_context():
+                search_config['SERPAPI_API_KEY'] = app.config.get('SERPAPI_API_KEY')
+                search_config['MAX_URLS_TO_CRAWL'] = app.config.get('MAX_URLS_TO_CRAWL')
+            
+            urls = await asyncio.to_thread(
+                search_web_with_config, 
+                query, 
+                max_results=depth * buffer_factor,
+                config=search_config
+            )
         
-        # Pass the config directly to avoid needing current_app
-        urls = await asyncio.to_thread(
-            search_web_with_config, 
-            query, 
-            max_results=depth * buffer_factor,
-            config=search_config
-        )
+        if include_files:
+            has_file_results = True
+            logger.info(f"File search enabled for query: {query}")
         
-        if not urls:
+        # If no web results and not including files, show error
+        if not urls and not has_file_results:
             update_progress(search_id, 'error', 100, {
                 'message': 'No relevant results found. Please try a different query.'
             })
@@ -102,14 +134,49 @@ async def process_search(search_id, query, depth, summary_length):
         # Update progress - Starting crawling
         update_progress(search_id, 'crawling', 30, {
             'message': 'Extracting content from sources...',
-            'urls_found': len(urls)
+            'urls_found': len(urls),
+            'includes_files': has_file_results
         })
         
-        # Step 2: Crawl the URLs to extract content
-        # Create app context for the async crawling
+        # Step 2: Crawl URLs and/or local files to extract content
+        sources = []
         async with app.app_context():
-            sources = await crawl_urls(urls, target_count=depth)
-        
+            # Create base directories list from config
+            base_dirs = app.config.get('BASE_DIRECTORIES', [])
+
+            # Local-only search path
+            if search_scope == 'files' and not urls:
+                logger.info("Performing local-only file search")
+                file_crawler = FileCrawler(
+                    base_directories=base_dirs,
+                    max_concurrent_extractions=app.config.get('MAX_CONCURRENT_EXTRACTIONS', 5)
+                )
+                
+                # Directly search for files
+                sources = await file_crawler.crawl_files(
+                    query=query,
+                    target_count=depth
+                )
+                
+                logger.info(f"Local file search complete, found {len(sources)} sources")
+            else:
+                # Regular integrated crawling
+                crawler = IntegratedCrawler(
+                    use_browser=app.config.get('USE_BROWSER_CRAWLER', True) and include_web,
+                    use_file_search=include_files,
+                    max_concurrent_requests=app.config.get('MAX_CONCURRENT_REQUESTS', 10),
+                    max_concurrent_per_domain=app.config.get('MAX_CONCURRENT_PER_DOMAIN', 3),
+                    base_directories=base_dirs
+                )
+                
+                # Crawl sources
+                sources = await crawler.crawl_urls(
+                    urls, 
+                    query=query, 
+                    target_count=depth,
+                    include_files=has_file_results
+                )
+
         if not sources:
             update_progress(search_id, 'error', 100, {
                 'message': 'Could not extract content from search results.'
@@ -178,6 +245,7 @@ async def search():
     query = form.get('query', '')
     depth = int(form.get('depth', 3))
     summary_length = form.get('summary_length', 'medium')
+    search_scope = form.get('search_scope', 'web')  # Get the search scope
     
     if not query:
         return await render_template('index.html', error="Please enter a search query.")
@@ -189,11 +257,12 @@ async def search():
     update_progress(search_id, 'starting', 0, {
         'query': query,
         'depth': depth,
-        'summary_length': summary_length
+        'summary_length': summary_length,
+        'search_scope': search_scope  # Add search scope to progress data
     })
     
     # Start background task for processing
-    task = asyncio.create_task(process_search(search_id, query, depth, summary_length))
+    task = asyncio.create_task(process_search(search_id, query, depth, summary_length, search_scope))
     background_tasks[search_id] = task
     
     # Return template with search_id for progress tracking
