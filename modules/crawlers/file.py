@@ -60,7 +60,7 @@ class FileCrawler:
         self.extraction_semaphore = asyncio.Semaphore(max_concurrent_extractions)
         
     async def crawl_files(self, query: str, file_paths: Optional[List[str]] = None, 
-                         target_count: int = 5) -> List[Source]:
+                     target_count: int = 5) -> List[Source]:
         """
         Crawl files matching the query and extract content.
         
@@ -72,7 +72,6 @@ class FileCrawler:
         Returns:
             List of sources with extracted content
         """
-        
         sources: List[Source] = []
         files_to_process: List[str] = []
         
@@ -86,6 +85,10 @@ class FileCrawler:
         # Limit the number of files to process
         files_to_process = files_to_process[:min(target_count * 2, len(files_to_process))]
         
+        if not files_to_process:
+            logger.info(f"No matching files found for query: {query}")
+            return []
+            
         # Process files concurrently
         tasks = [self.extract_file_content(file_path) for file_path in files_to_process]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -97,6 +100,7 @@ class FileCrawler:
                 if len(sources) >= target_count:
                     break
                     
+        logger.info(f"Processed {len(sources)} files for query: {query}")
         return sources[:target_count]
     
     async def _find_matching_files(self, query: str) -> List[str]:
@@ -110,16 +114,12 @@ class FileCrawler:
         normalized_query = re.sub(r'[^\w\s]', '', query.lower())
         query_terms = normalized_query.split()
         
-        logger.info(f"Searching for files matching normalized query: {normalized_query}")
-        logger.info(f"Base directories: {self.base_directories}")
-        
         # Search each base directory
         for base_dir in self.base_directories:
             if not base_dir or not os.path.exists(base_dir):
                 logger.warning(f"Base directory does not exist: {base_dir}")
                 continue
                 
-            logger.info(f"Searching directory: {base_dir}")
             file_count = 0
             
             try:
@@ -146,32 +146,31 @@ class FileCrawler:
                         # Path matching
                         path_lower = os.path.relpath(root, base_dir).lower()
                         
+                        # Check for matches
+                        match_found = False
+                        
                         # 1. Check if any term is a substring of the normalized filename
                         if any(term in normalized_file for term in query_terms):
                             matching_files.append(file_path)
-                            logger.info(f"Found matching file (by name): {file_path}")
-                            file_count += 1
-                            continue
-                        
+                            match_found = True
                         # 2. Check if any term is in the path
-                        if any(term in path_lower for term in query_terms):
+                        elif any(term in path_lower for term in query_terms):
                             matching_files.append(file_path)
-                            logger.info(f"Found matching file (by path): {file_path}")
-                            file_count += 1
-                            continue
-                        
+                            match_found = True
                         # 3. For text files under a certain size, check content for matches
-                        if file_ext in ['.txt', '.md', '.csv', '.json'] and os.path.getsize(file_path) < 1024 * 100:  # 100KB max
+                        elif file_ext in ['.txt', '.md', '.csv', '.json'] and os.path.getsize(file_path) < 1024 * 100:
                             try:
                                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                                     content = f.read(1024 * 10)  # Read first 10KB for quick check
                                     content_lower = content.lower()
                                     if query.lower() in content_lower or any(term in content_lower for term in query_terms):
                                         matching_files.append(file_path)
-                                        logger.info(f"Found matching file (by content): {file_path}")
-                                        file_count += 1
-                            except Exception as e:
-                                logger.debug(f"Error reading file content {file_path}: {str(e)}")
+                                        match_found = True
+                            except Exception:
+                                pass
+                        
+                        if match_found:
+                            file_count += 1
                 
                 logger.info(f"Found {file_count} matching files in {base_dir}")
             except Exception as e:
@@ -213,13 +212,11 @@ class FileCrawler:
                 # Get appropriate extractor
                 extractor = get_extractor_for_file(file_path)
                 if not extractor:
-                    logger.warning(f"No extractor available for: {file_path}")
                     return None
                 
                 # Extract content
                 content = await extractor.extract(file_path)
                 if not content:
-                    logger.warning(f"No content extracted from: {file_path}")
                     return None
                 
                 # Create source
@@ -236,4 +233,4 @@ class FileCrawler:
                 
             except Exception as e:
                 logger.error(f"Error extracting content from {file_path}: {str(e)}")
-                raise FileExtractionError(f"Error extracting content: {str(e)}")    
+                raise FileExtractionError(f"Error extracting content: {str(e)}")
