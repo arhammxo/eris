@@ -339,3 +339,69 @@ footer {
     border: 0;
     border-top: 1px solid rgba(0,0,0,0.1);
 }
+
+/* Chunk-based reference styles */
+.chunk-item {
+    transition: all 0.3s ease;
+    border-left: 3px solid transparent;
+}
+
+.chunk-item:hover {
+    border-left-color: #0d6efd;
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.active-chunk {
+    border-left-color: #0d6efd !important;
+    background-color: rgba(13, 110, 253, 0.1) !important;
+    box-shadow: 0 0 8px rgba(13, 110, 253, 0.3);
+}
+
+.chunk-content {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    padding: 0.5rem;
+    background-color: rgba(0, 0, 0, 0.02);
+    border-radius: 4px;
+    margin-top: 0.5rem;
+}
+
+/* Enhance citation highlight styling */
+.citation-highlight {
+    display: inline-block;
+    padding: 0 4px; /* Increased horizontal padding slightly */
+    border-radius: 3px;
+    color: #0d6efd;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 1px dotted #0d6efd; /* Added dotted underline */
+}
+
+.citation-highlight:hover {
+    background-color: rgba(13, 110, 253, 0.2);
+    text-decoration: underline; /* Kept underline on hover */
+}
+
+/* Make the active highlight more visible */
+.highlight-active {
+    background-color: rgba(13, 110, 253, 0.3) !important; /* Slightly darker background */
+    font-weight: bold; /* Added bold font weight */
+    border-bottom: 2px solid #0d6efd; /* Made underline solid and thicker */
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .chunk-item .card-subtitle {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    #chunk-sort, #chunk-filter {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    
+    .mb-3.d-flex {
+        flex-direction: column;
+    }
+}

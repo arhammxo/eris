@@ -31,6 +31,35 @@ class Source(SourceMetadata, SourceContent):
     """Complete source with metadata and content."""
     pass
 
+class ChunkMetadata(TypedDict):
+    chunk_id: str
+    source_url: URL
+    source_title: str
+    source_domain: str
+    content: str
+    position: int
+    start_char: int  # Position in original text
+    end_char: int    # Position in original text
+    quality_score: float  # Inherit from source or calculate per chunk
+
+class EnhancedProcessedSource(TypedDict):
+    url: URL
+    title: str
+    domain: DomainName
+    cleaned_text: str
+    important_sentences: List[str]
+    chunks: List[ChunkMetadata]  # <-- Enhanced with metadata
+    original_length: int
+    processed_length: int
+    quality_score: float
+
+# For summary results
+class ChunkReference(TypedDict):
+    chunk_id: str
+    source_url: URL
+    source_title: str
+    relevance_score: float  # How relevant this chunk was to the summary
+
 # Processed content types
 class ProcessedSource(TypedDict):
     """Source after text processing."""

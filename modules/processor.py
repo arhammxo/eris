@@ -142,14 +142,52 @@ async def process_source(source: Source) -> Optional[ProcessedSource]:
     # Score the content quality
     quality_score = await asyncio.to_thread(quality_scorer.score_content, source)
     
-    # Create processed source
+    # Create enhanced chunks with metadata
+    enhanced_chunks = []
+    current_pos = 0
+    for idx, chunk_content in enumerate(chunks):
+        # Create a unique chunk ID
+        # Note: hash() is not stable across Python processes/versions.
+        # Consider a more robust hashing like hashlib.sha1 if needed.
+        chunk_id = f"{source.get('domain', 'no_domain')}_{hash(source.get('url', 'no_url'))}_{idx}"
+
+        # Find start position more robustly
+        start_pos = cleaned_text.find(chunk_content, current_pos)
+        if start_pos == -1:
+            # Fallback if the exact chunk isn't found (e.g., due to minor cleaning differences)
+            # Use the start of the first sentence if possible
+            first_sentence = chunk_content.split('.')[0]
+            start_pos = cleaned_text.find(first_sentence, current_pos)
+            if start_pos == -1:
+                 # If still not found, log a warning and use approximate position
+                 logger.warning(f"Could not accurately find start position for chunk {idx} in {source.get('url', 'unknown')}. Using previous end position.")
+                 start_pos = current_pos # Approximate start
+
+        end_pos = start_pos + len(chunk_content)
+        current_pos = end_pos # Update current position for next search
+
+        # Create enhanced chunk dictionary
+        enhanced_chunk = {
+            "chunk_id": chunk_id,
+            "source_url": source.get('url'),
+            "source_title": source.get('title'),
+            "source_domain": source.get('domain'),
+            "content": chunk_content,
+            "position": idx,
+            "start_char": start_pos if start_pos != -1 else None, # Use None if not found
+            "end_char": end_pos if start_pos != -1 else None, # Use None if not found
+            "quality_score": quality_score  # Inherit from source for now
+        }
+        enhanced_chunks.append(enhanced_chunk)
+
+    # Create processed source, now using enhanced_chunks
     return {
-        'url': source['url'],
-        'title': source['title'],
-        'domain': source['domain'],
-        'cleaned_text': cleaned_text,
+        'url': source.get('url'),
+        'title': source.get('title'),
+        'domain': source.get('domain'),
+        'cleaned_text': cleaned_text, # Keep the full cleaned text if needed elsewhere
         'important_sentences': important_sentences,
-        'chunks': chunks,
+        'chunks': enhanced_chunks,  # Use the list of chunk dictionaries
         'original_length': len(content),
         'processed_length': len(cleaned_text),
         'quality_score': quality_score

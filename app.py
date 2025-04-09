@@ -241,14 +241,38 @@ async def process_search(search_id, query, depth, summary_length, search_scope='
         })
         
         # Step 5: Cache results
+        # Collect all chunks from processed content
+        all_chunks = []
+        for source in processed_content:
+            for chunk in source['chunks']:
+                all_chunks.append(chunk)
+        
+        # Create a mapping from chunk_id to full chunk data for easier lookup
+        chunk_map = {chunk['chunk_id']: chunk for chunk in all_chunks}
+        
+        # Enhance the used_chunks with full content
+        used_chunks_with_content = []
+        for used_chunk in metadata.get('used_chunks', []):
+            chunk_id = used_chunk['chunk_id']
+            if chunk_id in chunk_map:
+                # Add the full content to the used chunk
+                used_chunk_with_content = {**used_chunk, 'content': chunk_map[chunk_id]['content']}
+                used_chunks_with_content.append(used_chunk_with_content)
+        
         result = {
             'query': query,
             'timestamp': time.time(),
             'search_id': search_id,
             'sources': sources,
             'summary': summary,
-            'metadata': metadata
+            'metadata': {
+                **metadata,
+                # Replace used_chunks with enhanced version
+                'used_chunks': used_chunks_with_content
+            }
+            # Removed the old 'chunks' and 'all_processed_chunks' keys
         }
+        
         cache.set(search_id, result, timeout=86400)  # 24 hour cache
         
         return result

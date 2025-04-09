@@ -52,21 +52,77 @@
         
         <div class="card shadow">
             <div class="card-header">
-                <h3 class="mb-0">Sources</h3>
+                <ul class="nav nav-tabs card-header-tabs" id="source-view-tabs">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="full-sources-tab" data-bs-toggle="tab" href="#full-sources">Full Sources</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="referenced-chunks-tab" data-bs-toggle="tab" href="#referenced-chunks">Referenced Chunks</a>
+                    </li>
+                </ul>
             </div>
+
             <div class="card-body">
-                <div class="list-group">
-                    {% for source in sources %}
-                    <a href="{{ source.url }}" target="_blank" class="list-group-item list-group-item-action">
-                        <div class="d-flex w-100 justify-content-between">
-                            <h5 class="mb-1">{{ source.title }}</h5>
-                            <small class="text-muted">{{ source.domain }}</small>
+                <div class="tab-content" id="source-view-content">
+                    <!-- Original full sources view -->
+                    <div class="tab-pane fade show active" id="full-sources">
+                        <div class="list-group">
+                            {% for source in sources %}
+                            <a href="{{ source.url }}" target="_blank" class="list-group-item list-group-item-action">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h5 class="mb-1">{{ source.title }}</h5>
+                                    <small class="text-muted">{{ source.domain }}</small>
+                                </div>
+                                <p class="mb-1 source-snippet">
+                                    {{ source.content[:200] + '...' if source.content|length > 200 else source.content }}
+                                </p>
+                            </a>
+                            {% endfor %}
                         </div>
-                        <p class="mb-1 source-snippet">
-                            {{ source.content[:200] + '...' if source.content|length > 200 else source.content }}
-                        </p>
-                    </a>
-                    {% endfor %}
+                    </div>
+
+                    <!-- New referenced chunks view -->
+                    <div class="tab-pane fade" id="referenced-chunks">
+                        <!-- Controls for filtering/sorting chunks -->
+                        <div class="mb-3 d-flex justify-content-between">
+                            <div class="d-flex gap-2">
+                                <select class="form-select form-select-sm" id="chunk-sort">
+                                    <option value="reference-order">Reference Order</option>
+                                    <option value="relevance">Relevance</option>
+                                    <option value="source">Source</option>
+                                </select>
+                                <button class="btn btn-sm btn-outline-secondary" id="toggle-highlight">
+                                    <i class="bi bi-highlighter"></i> Toggle Highlights
+                                </button>
+                            </div>
+                            <input type="text" class="form-control form-control-sm" id="chunk-filter"
+                                   placeholder="Filter chunks..." style="max-width: 200px;">
+                        </div>
+
+                        <!-- Container for referenced chunks -->
+                        <div id="chunks-container">
+                            {% if metadata.used_chunks %}
+                                {% for chunk in metadata.used_chunks %}
+                                <div class="chunk-item card mb-2" data-chunk-id="{{ chunk.chunk_id }}">
+                                    <div class="card-body">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <h6 class="card-subtitle">
+                                                <span class="badge bg-primary">Chunk {{ chunk.chunk_id.split('_')[-1] }}</span>
+                                                <a href="{{ chunk.source_url }}" target="_blank">{{ chunk.source_title }}</a>
+                                            </h6>
+                                            <small class="text-muted">{{ chunk.source_url.split('/')[2] }}</small>
+                                        </div>
+                                        <div class="chunk-content">
+                                            {{ chunk.content }}
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="alert alert-info">No referenced chunks available.</div>
+                            {% endif %}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -122,42 +178,90 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- Text-to-speech functionality -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Initialize text-to-speech functionality
         initTTS();
         
         // Copy summary functionality
-        document.getElementById('copy-summary').addEventListener('click', function() {
-            const summaryText = document.querySelector('.summary-content').innerText;
-            navigator.clipboard.writeText(summaryText)
-                .then(() => {
-                    this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
-                    setTimeout(() => {
-                        this.innerHTML = '<i class="bi bi-clipboard"></i> Copy Summary';
-                    }, 2000);
-                })
-                .catch(err => {
-                    alert('Failed to copy summary');
-                });
-        });
+        const copyButton = document.getElementById('copy-summary');
+        if (copyButton) {
+            copyButton.addEventListener('click', function() {
+                const summaryTextElement = document.querySelector('.summary-content');
+                if (summaryTextElement) {
+                    const summaryText = summaryTextElement.innerText;
+                    navigator.clipboard.writeText(summaryText)
+                        .then(() => {
+                            this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
+                            setTimeout(() => {
+                                this.innerHTML = '<i class="bi bi-clipboard"></i> Copy Summary';
+                            }, 2000);
+                        })
+                        .catch(err => {
+                            console.error('Failed to copy summary:', err);
+                            alert('Failed to copy summary');
+                        });
+                }
+            });
+        }
         
         // Share functionality
-        document.getElementById('share-button').addEventListener('click', function() {
-            if (navigator.share) {
-                navigator.share({
-                    title: 'Web Summary: {{ query }}',
-                    text: document.querySelector('.summary-content').innerText.substring(0, 100) + '...',
-                    url: window.location.href,
-                })
-                .catch(err => {
-                    // Silently handle share errors
-                });
-            } else {
-                alert('Web Share API not supported in your browser');
-            }
-        });
+        const shareButton = document.getElementById('share-button');
+        if (shareButton) {
+            shareButton.addEventListener('click', function() {
+                if (navigator.share) {
+                    const summaryTextElement = document.querySelector('.summary-content');
+                    const summaryText = summaryTextElement ? summaryTextElement.innerText.substring(0, 100) + '...' : 'Check out these results';
+                    navigator.share({
+                        title: 'Web Summary: {{ query }}',
+                        text: summaryText,
+                        url: window.location.href,
+                    })
+                    .catch(err => {
+                        // Silently handle share errors or log them
+                        console.log('Share cancelled or failed:', err);
+                    });
+                } else {
+                    alert('Web Share API not supported in your browser. You can copy the URL manually.');
+                }
+            });
+        }
+
+        // Add console.log for debugging
+        console.log("Initializing chunk reference UI...");
+
+        // Initialize variables for new functionality
+        const summaryContent = document.getElementById('summary-content');
+        const chunksContainer = document.getElementById('chunks-container');
+        // Note: querySelectorAll('.chunk-item') needs to be run after potential sorting/filtering updates
+        const chunkFilter = document.getElementById('chunk-filter');
+        const chunkSort = document.getElementById('chunk-sort');
+        const toggleHighlight = document.getElementById('toggle-highlight');
+
+        // Initialize the chunk/citation UI features
+        highlightCitations(); // Run this first to set up citation listeners
+
+        // Add event listeners for new features
+        if (chunkFilter) {
+            chunkFilter.addEventListener('input', filterChunks);
+        }
+
+        if (chunkSort) {
+            chunkSort.addEventListener('change', sortChunks);
+        }
+
+        if (toggleHighlight) {
+            console.log("Toggle highlight button found");
+            toggleHighlight.addEventListener('click', toggleCitationHighlights);
+            // Initialize highlight state if needed (e.g., start highlighted)
+            // toggleCitationHighlights(); // Uncomment if you want highlights active by default
+        } else {
+             console.error("Toggle highlight button not found");
+        }
+
+        // Initial sort if needed (e.g., sort by relevance on load)
+        // sortChunks(); // Uncomment if you want an initial sort other than DOM order
+
     });
 
     function initTTS() {
@@ -279,8 +383,13 @@
         // Update status display
         function updateStatus(message) {
             if (statusElement) {
+                statusElement.innerHTML = ''; // Clear previous content
                 if (message === 'Speaking...' || message === 'Resumed speaking') {
-                    statusElement.innerHTML = '<span class="speaking-indicator"></span> ' + message;
+                    // Create and append the indicator span dynamically if needed
+                    const indicator = document.createElement('span');
+                    indicator.className = 'speaking-indicator'; 
+                    statusElement.appendChild(indicator);
+                    statusElement.appendChild(document.createTextNode(' ' + message));
                 } else {
                     statusElement.textContent = message;
                 }
@@ -349,5 +458,220 @@
         
         updateStatus('Ready to speak');
     }
+
+    // Process the summary to highlight citations
+    function highlightCitations() {
+        const summaryContent = document.getElementById('summary-content');
+        if (!summaryContent) return;
+
+        // Use a more specific regex to avoid matching within attributes if possible
+        // This regex looks for the pattern not preceded by "data-chunk-id="
+        const citationRegex = /(?<!data-chunk-id=")(\[Source: ([^\]]+)\])/g;
+        let summaryHTML = summaryContent.innerHTML;
+        let citationsFound = false;
+
+        summaryHTML = summaryHTML.replace(citationRegex, (match, fullMatch, chunkId) => {
+            citationsFound = true;
+            // Ensure chunkId is properly escaped for attribute selector if needed, though usually safe
+            const safeChunkId = chunkId.trim(); 
+            return `<span class="citation-highlight" data-chunk-id="${safeChunkId}" role="button" tabindex="0" title="Go to source ${safeChunkId}">${fullMatch}</span>`;
+        });
+
+        if (citationsFound) {
+            summaryContent.innerHTML = summaryHTML;
+
+            // Add click and keyboard event listeners to citations
+            document.querySelectorAll('.citation-highlight').forEach(citation => {
+                const action = () => {
+                    const chunkId = citation.dataset.chunkId;
+                    highlightChunk(chunkId);
+                    switchToChunksTab();
+                    scrollToChunk(chunkId);
+                };
+                citation.addEventListener('click', action);
+                citation.addEventListener('keydown', (event) => {
+                     if (event.key === 'Enter' || event.key === ' ') {
+                         event.preventDefault(); // Prevent space bar scrolling
+                         action();
+                     }
+                 });
+            });
+        }
+    }
+
+    // Highlight a specific chunk
+    function highlightChunk(chunkId) {
+        // Remove highlight from all chunks
+        document.querySelectorAll('.chunk-item.active-chunk').forEach(chunk => {
+            chunk.classList.remove('active-chunk');
+        });
+
+        // Add highlight to the selected chunk
+        const targetChunk = document.querySelector(`.chunk-item[data-chunk-id="${chunkId}"]`);
+        if (targetChunk) {
+            targetChunk.classList.add('active-chunk');
+        }
+    }
+
+    // Switch to the chunks tab
+    function switchToChunksTab() {
+        const chunksTabElement = document.getElementById('referenced-chunks-tab');
+        if (chunksTabElement && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+            const tabInstance = bootstrap.Tab.getOrCreateInstance(chunksTabElement);
+            tabInstance.show();
+        } else {
+            console.warn("Chunks tab or Bootstrap Tab component not found.");
+        }
+    }
+
+    // Scroll to a specific chunk
+    function scrollToChunk(chunkId) {
+        const targetChunk = document.querySelector(`.chunk-item[data-chunk-id="${chunkId}"]`);
+        if (targetChunk) {
+            // Check visibility before scrolling
+            const rect = targetChunk.getBoundingClientRect();
+            const isVisible = (
+                rect.top >= 0 &&
+                rect.left >= 0 &&
+                rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+                rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+            );
+            
+            // Only scroll if not already fully visible
+            if (!isVisible) {
+                 targetChunk.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+
+    // Filter chunks based on search input
+    function filterChunks() {
+        const chunkFilter = document.getElementById('chunk-filter');
+        if (!chunkFilter) return;
+        const filterValue = chunkFilter.value.toLowerCase().trim();
+        let visibleCount = 0;
+
+        document.querySelectorAll('#chunks-container .chunk-item').forEach(chunk => {
+            const chunkContent = chunk.querySelector('.chunk-content')?.textContent.toLowerCase() || '';
+            const chunkTitle = chunk.querySelector('.card-subtitle')?.textContent.toLowerCase() || '';
+            const chunkDomain = chunk.querySelector('.text-muted')?.textContent.toLowerCase() || '';
+
+            const isMatch = chunkContent.includes(filterValue) || 
+                            chunkTitle.includes(filterValue) ||
+                            chunkDomain.includes(filterValue);
+
+            if (isMatch) {
+                chunk.style.display = '';
+                visibleCount++;
+            } else {
+                chunk.style.display = 'none';
+            }
+        });
+        
+        // Optional: Add feedback if no chunks match
+        const noResultsFeedback = document.getElementById('no-filter-results');
+        if (noResultsFeedback) {
+            noResultsFeedback.style.display = (visibleCount === 0 && filterValue !== '') ? 'block' : 'none';
+        } else if (visibleCount === 0 && filterValue !== '') {
+             // Dynamically create feedback if needed
+             const container = document.getElementById('chunks-container');
+             if (container && !document.getElementById('no-filter-results')) {
+                 const feedbackDiv = document.createElement('div');
+                 feedbackDiv.id = 'no-filter-results';
+                 feedbackDiv.className = 'alert alert-warning mt-3';
+                 feedbackDiv.textContent = 'No chunks match your filter.';
+                 container.appendChild(feedbackDiv);
+             }
+        }
+    }
+
+    // Sort chunks based on selected option
+    function sortChunks() {
+        const chunkSort = document.getElementById('chunk-sort');
+        const container = document.getElementById('chunks-container');
+        if (!chunkSort || !container) return;
+
+        const sortValue = chunkSort.value;
+        // Get chunks *currently* within the container (respecting filters)
+        const chunks = Array.from(container.querySelectorAll('.chunk-item')); 
+
+        chunks.sort((a, b) => {
+            const aId = a.dataset.chunkId;
+            const bId = b.dataset.chunkId;
+
+            if (sortValue === 'source') {
+                // Sort by source domain, then title, then chunk index as tiebreaker
+                const aSourceEl = a.querySelector('.card-subtitle a');
+                const bSourceEl = b.querySelector('.card-subtitle a');
+                const aDomain = a.querySelector('.text-muted')?.textContent || '';
+                const bDomain = b.querySelector('.text-muted')?.textContent || '';
+                const aTitle = aSourceEl?.textContent || '';
+                const bTitle = bSourceEl?.textContent || '';
+                const aIndex = parseInt(aId.split('_').pop() || '0', 10);
+                const bIndex = parseInt(bId.split('_').pop() || '0', 10);
+
+                if (aDomain.localeCompare(bDomain) !== 0) return aDomain.localeCompare(bDomain);
+                if (aTitle.localeCompare(bTitle) !== 0) return aTitle.localeCompare(bTitle);
+                return aIndex - bIndex;
+                
+            } else if (sortValue === 'relevance') {
+                // Sort by number of citations in the summary (desc), then reference order (asc)
+                const aCitations = document.querySelectorAll(`.citation-highlight[data-chunk-id="${aId}"]`).length;
+                const bCitations = document.querySelectorAll(`.citation-highlight[data-chunk-id="${bId}"]`).length;
+                if (bCitations !== aCitations) {
+                    return bCitations - aCitations; // Higher count first
+                } else {
+                    // Fallback to reference order if citation count is equal
+                     const aIndex = parseInt(aId.split('_').pop() || '0', 10);
+                     const bIndex = parseInt(bId.split('_').pop() || '0', 10);
+                     return aIndex - bIndex;
+                }
+            } else { // 'reference-order' or default
+                // Sort by the numeric part of the chunk ID
+                const aIndex = parseInt(aId.split('_').pop() || '0', 10);
+                const bIndex = parseInt(bId.split('_').pop() || '0', 10);
+                return aIndex - bIndex;
+            }
+        });
+
+        // Reattach sorted chunks to container
+        // Detach all first to avoid potential issues during reordering
+        chunks.forEach(chunk => container.removeChild(chunk));
+        chunks.forEach(chunk => container.appendChild(chunk));
+        
+        // Re-apply filter visibility after sorting
+        filterChunks(); 
+    }
+
+    // Toggle citation highlights in summary
+    function toggleCitationHighlights() {
+         console.log("Toggle highlights clicked");
+         const citations = document.querySelectorAll('.citation-highlight');
+         console.log(`Found ${citations.length} citation highlights`);
+         const toggleButton = document.getElementById('toggle-highlight');
+         let isActive = false;
+         
+         citations.forEach(citation => {
+             // Toggle the class and check if any are active after toggle
+             citation.classList.toggle('highlight-active');
+             if (citation.classList.contains('highlight-active')) {
+                 isActive = true;
+             }
+         });
+
+         // Update button state/appearance
+         if (toggleButton) {
+             if (isActive) {
+                 toggleButton.classList.add('active'); // Bootstrap 'active' state for buttons
+                 toggleButton.setAttribute('aria-pressed', 'true');
+                 toggleButton.title = "Disable citation highlights";
+             } else {
+                 toggleButton.classList.remove('active');
+                 toggleButton.setAttribute('aria-pressed', 'false');
+                 toggleButton.title = "Enable citation highlights";
+             }
+         }
+    }
+
 </script>
 {% endblock %}
