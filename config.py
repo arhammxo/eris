@@ -48,6 +48,11 @@ class Config:
     USE_DYNAMIC_COMBINATION = os.environ.get('USE_DYNAMIC_COMBINATION', 'True').lower() == 'true'
     USE_OPENAI_FOR_PPL = os.environ.get('USE_OPENAI_FOR_PPL', 'False').lower() == 'true'
     
+    # Enhanced attribution settings
+    ENABLE_ENHANCED_ATTRIBUTION = os.environ.get('ENABLE_ENHANCED_ATTRIBUTION', 'True').lower() == 'true'
+    ATTRIBUTION_SIMILARITY_THRESHOLD = float(os.environ.get('ATTRIBUTION_SIMILARITY_THRESHOLD', 0.6))
+    ATTRIBUTION_MIN_CONFIDENCE = float(os.environ.get('ATTRIBUTION_MIN_CONFIDENCE', 0.3))
+    
     # User-Agent for crawler
     USER_AGENT = os.environ.get('USER_AGENT', "Mozilla/5.0 WebSummarizerBot/1.0")
     

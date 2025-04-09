@@ -1,8 +1,9 @@
 """
-Web Summarizer: Main application entry point.
+Web Summarizer: Main application entry point with enhanced attribution.
 
 This Quart-based application provides a web interface for searching,
-crawling, and summarizing web content with asynchronous processing.
+crawling, and summarizing web content with asynchronous processing
+and improved source attribution.
 """
 from quart import Quart, render_template, request, jsonify, websocket
 from flask_caching import Cache
@@ -12,6 +13,8 @@ import asyncio
 from datetime import datetime
 import logging
 import os
+import re
+import nltk
 
 import nest_asyncio
 nest_asyncio.apply()
@@ -38,32 +41,31 @@ def register_template_filters(app):
     @app.template_filter('markdown')
     def markdown_filter(text):
         """Template filter to render markdown."""
-        if not text:
-            return ""
-        
-        try:
-            # Simple inline implementation without external dependencies
-            import re
-            from markupsafe import Markup
-            
-            # Convert headers (simple implementation)
-            text = re.sub(r'^#\s+(.*?)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
-            text = re.sub(r'^##\s+(.*?)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
-            text = re.sub(r'^###\s+(.*?)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
-            
-            # Convert bold and italic
-            text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
-            text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
-            
-            # Convert paragraphs (simple approach)
-            paragraphs = text.split('\n\n')
-            text = ''.join([f'<p>{p}</p>' for p in paragraphs if p.strip()])
-            
-            return Markup(text)
-        except Exception as e:
-            logger.error(f"Error rendering markdown: {str(e)}")
-            # Return plain text on error
-            return text
+        return render_markdown(text)
+    
+    @app.template_filter('tojson')
+    def tojson_filter(obj):
+        """Convert object to JSON string."""
+        import json
+        return json.dumps(obj)
+    
+    @app.template_filter('unique')
+    def unique_filter(seq):
+        """Remove duplicates from a sequence."""
+        seen = set()
+        return [x for x in seq if not (x in seen or seen.add(x))]
+    
+    @app.template_filter('sum')
+    def sum_filter(seq, key=None):
+        """Sum values in a sequence."""
+        if not seq:
+            return []
+        if key:
+            # Sum a specific key in a list of dictionaries
+            return sum([item.get(key, 0) for item in seq])
+        else:
+            # Flatten a list of lists
+            return [item for sublist in seq for item in sublist]
 
 # Initialize logging
 setup_logging(
@@ -87,34 +89,14 @@ background_tasks = {}
 
 register_template_filters(app)
 
-
-# Register Jinja2 filters
-@app.template_filter('timestamp_to_datetime')
-def timestamp_to_datetime(timestamp):
-    """Convert a Unix timestamp to a formatted datetime string."""
-    if not timestamp:
-        return ''
-    return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-
 @app.route('/', methods=['GET'])
 async def index():
     """Render the search form."""
     return await render_template('index.html')
 
-@app.template_filter('markdown')
-def markdown_filter(text):
-    """Template filter to render markdown."""
-    try:
-        return render_markdown(text)
-    except Exception as e:
-        logger.error(f"Error rendering markdown: {str(e)}")
-        # Return escaped text as fallback
-        from markupsafe import escape
-        return escape(text)
-
 async def process_search(search_id, query, depth, summary_length, search_scope='web'):
     """
-    Asynchronous background task to process a search query.
+    Asynchronous background task to process a search query with enhanced attribution.
     
     Updates progress in the cache as each step completes.
     
@@ -123,6 +105,7 @@ async def process_search(search_id, query, depth, summary_length, search_scope='
         query: Search query
         depth: Number of sources to analyze
         summary_length: Desired summary length ('short', 'medium', 'long')
+        search_scope: Where to search ('web', 'files', or 'both')
         
     Returns:
         Result dictionary or None if processing failed
@@ -137,6 +120,11 @@ async def process_search(search_id, query, depth, summary_length, search_scope='
         has_file_results = False
         
         if include_web:
+            # Update progress - Starting search
+            update_progress(search_id, 'searching', 10, {
+                'message': 'Searching for relevant sources...'
+            })
+            
             # Web search
             buffer_factor = 2
             search_config = {}
@@ -222,11 +210,11 @@ async def process_search(search_id, query, depth, summary_length, search_scope='
         
         # Update progress - Generating summary
         update_progress(search_id, 'summarizing', 70, {
-            'message': 'Generating comprehensive summary...',
+            'message': 'Generating comprehensive summary with source attribution...',
             'sources_processed': len(processed_content)
         })
         
-        # Step 4: Generate summary using LLM
+        # Step 4: Generate summary using LLM with enhanced attribution
         async with app.app_context():
             summary, metadata = await generate_summary(
                 query, 
@@ -234,43 +222,45 @@ async def process_search(search_id, query, depth, summary_length, search_scope='
                 length=summary_length
             )
         
+        # Step 5: Post-process the summary to enhance attribution if needed
+        if app.config.get('ENABLE_ENHANCED_ATTRIBUTION', True):
+            try:
+                # Import here to avoid circular imports
+                from modules.attribution_analyzer import analyze_attribution
+                
+                # Get all chunks from processed sources
+                all_chunks = []
+                for source in processed_content:
+                    all_chunks.extend(source['chunks'])
+                
+                # Run the attribution analyzer
+                attribution_results = analyze_attribution(summary, all_chunks)
+                
+                # Add results to metadata
+                if attribution_results and 'attribution_mapping' in attribution_results:
+                    metadata['attribution_mapping'] = attribution_results['attribution_mapping']
+                    metadata['attribution_confidence'] = attribution_results.get('attribution_confidence', {})
+                    
+                    logger.info(f"Enhanced attribution analysis completed: found attributions for "
+                               f"{len(attribution_results['attribution_mapping'])} sentences")
+            except Exception as e:
+                logger.warning(f"Enhanced attribution analysis failed: {str(e)}")
+
+        
         # Update progress - Complete
         update_progress(search_id, 'complete', 100, {
             'message': 'Search complete!',
             'summary_length': len(summary)
         })
         
-        # Step 5: Cache results
-        # Collect all chunks from processed content
-        all_chunks = []
-        for source in processed_content:
-            for chunk in source['chunks']:
-                all_chunks.append(chunk)
-        
-        # Create a mapping from chunk_id to full chunk data for easier lookup
-        chunk_map = {chunk['chunk_id']: chunk for chunk in all_chunks}
-        
-        # Enhance the used_chunks with full content
-        used_chunks_with_content = []
-        for used_chunk in metadata.get('used_chunks', []):
-            chunk_id = used_chunk['chunk_id']
-            if chunk_id in chunk_map:
-                # Add the full content to the used chunk
-                used_chunk_with_content = {**used_chunk, 'content': chunk_map[chunk_id]['content']}
-                used_chunks_with_content.append(used_chunk_with_content)
-        
+        # Step 6: Cache results
         result = {
             'query': query,
             'timestamp': time.time(),
             'search_id': search_id,
             'sources': sources,
             'summary': summary,
-            'metadata': {
-                **metadata,
-                # Replace used_chunks with enhanced version
-                'used_chunks': used_chunks_with_content
-            }
-            # Removed the old 'chunks' and 'all_processed_chunks' keys
+            'metadata': metadata
         }
         
         cache.set(search_id, result, timeout=86400)  # 24 hour cache
@@ -287,6 +277,62 @@ async def process_search(search_id, query, depth, summary_length, search_scope='
         # Remove from active background tasks
         if search_id in background_tasks:
             del background_tasks[search_id]
+
+def analyze_sentence_attribution(summary, metadata):
+    """
+    Analyze which sentences in the summary can be attributed to which chunks.
+    
+    This provides additional attribution information beyond what is explicitly
+    cited in the summary.
+    
+    Args:
+        summary: The generated summary text
+        metadata: The metadata from the summary generation
+        
+    Returns:
+        Dictionary mapping sentence indices to chunk IDs
+    """
+    try:
+        # Download NLTK data if needed
+        try:
+            nltk.data.find('tokenizers/punkt')
+        except LookupError:
+            nltk.download('punkt', quiet=True)
+        
+        # Extract all citation references
+        citation_pattern = r'\[Source:\s*([^\]]+)\]'
+        citations = re.findall(citation_pattern, summary)
+        
+        # If no citations are found, no attribution mapping can be created
+        if not citations:
+            return {}
+        
+        # Split summary into sentences
+        sentences = nltk.sent_tokenize(summary)
+        if not sentences:
+            return {}
+        
+        # Create a mapping from sentences to chunk IDs
+        attribution_map = {}
+        
+        for i, sentence in enumerate(sentences):
+            # Check for citations in this sentence
+            sentence_citations = re.findall(citation_pattern, sentence)
+            
+            # Process citations (may contain multiple chunk IDs per citation)
+            chunk_ids = set()
+            for citation in sentence_citations:
+                ids = [chunk_id.strip() for chunk_id in citation.split(',')]
+                chunk_ids.update(id for id in ids if id)
+                
+            if chunk_ids:
+                attribution_map[str(i)] = list(chunk_ids)
+        
+        return attribution_map
+        
+    except Exception as e:
+        logger.warning(f"Sentence attribution analysis failed: {str(e)}")
+        return {}
 
 @app.route('/search', methods=['POST'])
 async def search():
@@ -353,6 +399,8 @@ async def api_search():
         data = await request.json
         query = data.get('query', '')
         depth = int(data.get('depth', 3))
+        summary_length = data.get('summary_length', 'medium')
+        search_scope = data.get('search_scope', 'web')
         
         if not query:
             return jsonify({'error': 'Query is required'}), 400
@@ -361,7 +409,7 @@ async def api_search():
         search_id = str(uuid.uuid4())
         
         # Start processing in background
-        task = asyncio.create_task(process_search(search_id, query, depth, 'medium'))
+        task = asyncio.create_task(process_search(search_id, query, depth, summary_length, search_scope))
         background_tasks[search_id] = task
         
         # Return initial response with search_id
@@ -446,10 +494,10 @@ def update_progress(search_id, status, progress=0, data=None):
     Update the progress of a search task.
     
     Args:
-        search_id: The search ID
-        status: Current status (starting, searching, crawling, etc.)
-        progress: Percentage complete (0-100)
-        data: Additional data to store
+        search_id (str): The search ID
+        status (str): Current status (starting, searching, crawling, etc.)
+        progress (int): Percentage complete (0-100)
+        data (dict): Additional data to store
     """
     if not app.config.get('ENABLE_PROGRESS_TRACKING'):
         return

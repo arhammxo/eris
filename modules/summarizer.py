@@ -1,8 +1,8 @@
 """
-AI-powered text summarization module.
+AI-powered text summarization module with enhanced attribution.
 
 This module provides functions for summarizing web content using
-OpenAI's API with query-specific prompt optimization.
+OpenAI's API with query-specific prompt optimization and improved source attribution.
 """
 import re
 import time
@@ -43,6 +43,13 @@ QUERY_TYPES = {
     ]
 }
 
+def get_openai_client():
+    """Get an initialized OpenAI client using the API key from config."""
+    api_key = current_app.config.get('OPENAI_API_KEY')
+    if not api_key:
+        raise ModelAPIError("OpenAI API key not configured")
+    return openai.OpenAI(api_key=api_key)
+
 @handle_async_exceptions(SummarizerError, "Failed to generate summary")
 async def generate_summary(
     query: str, 
@@ -67,29 +74,23 @@ async def generate_summary(
         raise SummarizerError("No content provided for summarization")
         
     try:
-        # Set OpenAI API key
-        api_key = current_app.config.get('OPENAI_API_KEY')
-        if not api_key:
-            logger.error("OpenAI API key not found")
-            raise ModelAPIError("API key not configured")
-            
-        client = openai.OpenAI(api_key=api_key)
+        # Get OpenAI client
+        client = get_openai_client()
         
         # Determine the max tokens based on length
         max_tokens = {
             'short': 150,
             'medium': 300,
             'long': 500
-        }.get(length, 300) # Note: This might need adjustment based on the number of chunks
+        }.get(length, 300)
         
         # Determine the model
         model = current_app.config.get('SUMMARY_MODEL', 'gpt-3.5-turbo')
         
-        # Detect query type for prompt customization (can still be useful for system prompt)
+        # Detect query type for prompt customization
         query_type = detect_query_type(query)
         logger.info(f"Detected query type: {query_type}")
         
-        # --- Start Edit 1: Flatten chunks and build new prompt ---
         # Flatten all chunks from all sources for easier tracking
         all_chunks = []
         total_content_length = 0
@@ -107,8 +108,8 @@ async def generate_summary(
                  raise SummarizerError("Invalid chunk format.")
             
             all_chunks.extend(source['chunks'])
-            total_content_length += source.get('original_length', 0) # Keep track of original total length
-            source_metadata.append({ # Store source info for final metadata
+            total_content_length += source.get('original_length', 0)
+            source_metadata.append({
                  'url': source['url'], 
                  'title': source['title'], 
                  'quality_score': source.get('quality_score', 0)
@@ -117,82 +118,105 @@ async def generate_summary(
         if not all_chunks:
             raise SummarizerError("No chunks found in processed content.")
 
-        # Customize system prompt based on query type (similar to combined summary prompt)
-        # This helps guide the overall synthesis style
+        # Enhanced system prompts with stronger attribution instructions
         system_prompts = {
              'factual': """
              You are a comprehensive research assistant that synthesizes factual information from provided text chunks.
-             Guidelines:
-             1. Synthesize information from the chunks to answer the user query.
-             2. For each significant point in your summary, cite the source chunk ID using [Source: chunk_id].
-             3. Focus on accuracy, clarity, and conciseness.
-             4. Maintain a neutral, informative tone.
-             5. Output ONLY the summary with citations. Do not add introductory or concluding remarks.
-             6. Output ALWAYS in a formated markdown view.
+             
+             IMPORTANT ATTRIBUTION INSTRUCTIONS:
+             1. For EVERY statement or fact in your summary, cite the specific chunk ID using [Source: chunk_id].
+             2. NEVER make a statement without citing its source chunk.
+             3. Citations MUST be placed immediately after the specific information they support.
+             4. If multiple chunks support a statement, cite all relevant chunks, e.g., [Source: chunk_id1, chunk_id2].
+             5. Do not combine information from different chunks without clearly attributing each piece.
+             6. If information appears in multiple chunks, cite the chunk with the most complete information.
+             
+             Additional Guidelines:
+             - Synthesize information accurately without distorting the original meaning.
+             - Focus on clarity, accuracy, and conciseness.
+             - Maintain a neutral, informative tone.
+             - Output ONLY the summary with citations.
+             - Format the summary using markdown.
              """,
              'comparison': """
              You are a balanced analysis assistant that synthesizes comparison information from provided text chunks.
-             Guidelines:
-             1. Organize the summary around key points of comparison relevant to the user query.
-             2. Present similarities and differences clearly.
-             3. For each comparison point, cite the supporting chunk IDs using [Source: chunk_id].
-             4. Maintain neutrality.
-             5. Output ONLY the summary with citations.
-             6. Output ALWAYS in a formated markdown view.
+             
+             IMPORTANT ATTRIBUTION INSTRUCTIONS:
+             1. For EVERY comparison point in your summary, cite the specific chunk ID using [Source: chunk_id].
+             2. NEVER make a statement without citing its source chunk.
+             3. Citations MUST be placed immediately after the specific information they support.
+             4. If multiple chunks support a statement, cite all relevant chunks, e.g., [Source: chunk_id1, chunk_id2].
+             5. For contrasting viewpoints, clearly attribute each perspective to its source.
+             6. When information appears in multiple chunks, cite the most authoritative or detailed source.
+
+             Additional Guidelines:
+             - Organize the summary around key points of comparison relevant to the user query.
+             - Present similarities and differences clearly.
+             - Maintain neutrality when presenting different perspectives.
+             - Output ONLY the summary with citations.
+             - Format the summary using markdown.
              """,
              'instructional': """
              You are a clear instructional assistant that synthesizes how-to information from provided text chunks.
-             Guidelines:
-             1. Present information as a cohesive guide addressing the user query.
-             2. Organize steps logically.
-             3. Cite the chunk ID for each step or key piece of information using [Source: chunk_id].
-             4. Focus on practical, actionable information.
-             5. Output ONLY the guide with citations.
-             6. Output ALWAYS in a formated markdown view.
+             
+             IMPORTANT ATTRIBUTION INSTRUCTIONS:
+             1. For EVERY step or instruction in your summary, cite the specific chunk ID using [Source: chunk_id].
+             2. NEVER include a step or instruction without citing its source chunk.
+             3. Citations MUST be placed immediately after the specific information they support.
+             4. If multiple chunks support a step, cite all relevant chunks, e.g., [Source: chunk_id1, chunk_id2].
+             5. For alternative approaches to the same task, clearly attribute each method to its source.
+             6. When steps appear in multiple chunks, cite the source that explains it most clearly.
+
+             Additional Guidelines:
+             - Present information as a cohesive guide addressing the user query.
+             - Organize steps logically in a sequence.
+             - Focus on practical, actionable information.
+             - Output ONLY the guide with citations.
+             - Format the instructions using markdown with numbered steps.
              """,
              'opinion': """
              You are a balanced review assistant that synthesizes opinions and evaluations from provided text chunks.
-             Guidelines:
-             1. Present the range of opinions relevant to the user query.
-             2. Note consensus or disagreement where applicable.
-             3. For each key opinion or evaluation, cite the source chunk ID using [Source: chunk_id].
-             4. Maintain neutrality.
-             5. Output ONLY the summary with citations.
-             6. Output ALWAYS in a formated markdown view.
+             
+             IMPORTANT ATTRIBUTION INSTRUCTIONS:
+             1. For EVERY opinion or evaluation in your summary, cite the specific chunk ID using [Source: chunk_id].
+             2. NEVER state an opinion without citing its source chunk.
+             3. Citations MUST be placed immediately after the specific opinion they support.
+             4. If multiple chunks express the same opinion, cite all relevant chunks, e.g., [Source: chunk_id1, chunk_id2].
+             5. For contrasting opinions, clearly attribute each perspective to its source.
+             6. When presenting consensus views, cite all chunks that express that view.
+
+             Additional Guidelines:
+             - Present the range of opinions relevant to the user query.
+             - Note consensus or disagreement where applicable.
+             - Maintain neutrality while presenting different viewpoints.
+             - Output ONLY the summary with citations.
+             - Format the summary using markdown with clear sections.
              """
          }
         system_prompt = system_prompts.get(query_type, system_prompts['factual'])
 
-        # Construct the user prompt with chunks and instructions
+        # Enhanced user prompt with explicit citation formatting instructions
         user_prompt = f"""
         The user searched for: "{query}"
 
         Synthesize the following text chunks to create a summary answering the query.
-        For each significant point in your summary, include a reference to the chunk ID 
-        that provided that information using the format [Source: chunk_id].
-
+        
+        CITATION FORMATTING RULES:
+        1. EVERY fact, statement, or opinion MUST be followed by a citation in this format: [Source: chunk_id]
+        2. For information from multiple chunks, use: [Source: chunk_id1, chunk_id2]
+        3. Place citations immediately after the specific statement they support
+        4. Do not place citations at the end of paragraphs - each claim needs its own citation
+        5. Citations must be inline (not as footnotes or endnotes)
+        
         Here are the chunks with their IDs:
         """
 
         # Add chunks with IDs to the prompt
-        # Consider token limits here - this could become very large
-        # A potential improvement is to select relevant chunks first
         chunk_texts = []
         for chunk in all_chunks:
-             # Basic check for chunk content length
-             if len(chunk.get('content', '')) > 10: # Ignore very short/empty chunks
+             if len(chunk.get('content', '')) > 10:
                  chunk_texts.append(f"CHUNK {chunk['chunk_id']}: {chunk['content']}")
         
-        # Check if adding chunks exceeds a reasonable prompt size (estimate tokens)
-        # This is a rough estimate; precise token counting is better
-        estimated_prompt_tokens = len(system_prompt.split()) + len(user_prompt.split()) + sum(len(c.split()) for c in chunk_texts)
-        # Example: Leave ~1000 tokens headroom below model limit (e.g., 4096 for gpt-3.5-turbo)
-        # MAX_PROMPT_TOKENS = 3000 
-        # if estimated_prompt_tokens > MAX_PROMPT_TOKENS:
-        #    logger.warning(f"Estimated prompt tokens ({estimated_prompt_tokens}) exceed limit. Truncating chunks.")
-        #    # Implement truncation or selection logic here if needed
-        #    pass 
-
         if not chunk_texts:
             raise SummarizerError("No suitable chunks found after filtering.")
 
@@ -200,35 +224,45 @@ async def generate_summary(
         
         user_prompt += f"""
 
-        Reminder: Create a coherent summary answering "{query}". Cite every piece of information 
-        using the specific CHUNK ID in the format [Source: chunk_id].
-        Output ONLY the summary with citations.
+        FINAL REMINDERS:
+        - Create a coherent summary answering "{query}".
+        - Cite EVERY piece of information with its source chunk ID.
+        - Use the exact format [Source: chunk_id] for citations.
+        - Only include information that appears in the provided chunks.
+        - If the chunks contain conflicting information, acknowledge the different perspectives and cite the sources.
+        - Output ONLY the summary with citations.
         """
 
-        # Call OpenAI API (single call with all chunks)
+        # Call OpenAI API - FIX: Use the correct method for API call
         logger.info(f"Generating summary using {model} with {len(all_chunks)} total chunks.")
-        response = await asyncio.to_thread(
-             client.chat.completions.create,
+        
+        # FIX: Instead of using await with .create(), use a synchronous call
+        response = client.chat.completions.create(
              model=model,
              messages=[
                  {"role": "system", "content": system_prompt},
                  {"role": "user", "content": user_prompt}
              ],
              max_tokens=max_tokens,
-             temperature=0.6, # Slightly lower temp might help with citation accuracy
+             temperature=0.5,  # Lower temperature for more consistent citations
          )
         
         combined_summary = response.choices[0].message.content.strip()
         logger.info(f"Raw summary generated. Length: {len(combined_summary)}")
 
-        # --- End Edit 1 ---
-
-        # --- Start Edit 2: Extract chunk references and update metadata ---
-        # Extract used chunk IDs from the summary
-        # This regex finds patterns like [Source: anything_not_a_closing_bracket]
-        chunk_references = re.findall(r'\[Source:\s*([^\]]+)\]', combined_summary)
-        # Normalize IDs (e.g., remove leading/trailing spaces)
-        referenced_chunk_ids = {ref.strip() for ref in chunk_references}
+        # Extract used chunk IDs from the summary with improved regex
+        # This regex handles both single citations [Source: id] and multiple citations [Source: id1, id2]
+        chunk_references = re.findall(r'\[Source:\s*(.*?)(?=\])', combined_summary)
+        
+        # Process to handle multiple chunk IDs in a single citation
+        referenced_chunk_ids = set()
+        for ref in chunk_references:
+            # Split by comma and clean up each ID
+            ids = [chunk_id.strip() for chunk_id in ref.split(',')]
+            for chunk_id in ids:
+                if chunk_id:  # Ensure we're not adding empty strings
+                    referenced_chunk_ids.add(chunk_id)
+        
         logger.info(f"Found {len(referenced_chunk_ids)} unique chunk references: {referenced_chunk_ids}")
 
         # Create list of used chunks with metadata
@@ -243,7 +277,8 @@ async def generate_summary(
                     "chunk_id": chunk_id,
                     "source_url": chunk['source_url'],
                     "source_title": chunk['source_title'],
-                    # Add relevance score later if needed
+                    "content": chunk['content'],
+                    "relevance_score": calculate_relevance_score(chunk, combined_summary)
                 })
                 found_ids.add(chunk_id)
             else:
@@ -252,30 +287,33 @@ async def generate_summary(
         if len(referenced_chunk_ids) > 0 and not used_chunks_details:
              logger.warning("Chunk references were found in the summary, but none matched the provided chunk IDs.")
 
+        # Create sentence-level attribution mapping
+        attribution_mapping = analyze_sentence_attribution(combined_summary, all_chunks)
+
         # Prepare metadata
         metadata: SummaryMetadata = {
             'sources_count': len(processed_content),
-            'total_content_length': total_content_length, # Use calculated total length
+            'total_content_length': total_content_length,
             'generated_at': time.time(),
             'model_used': model,
             'query_type': query_type,
-            'sources': source_metadata, # Use the stored source metadata
-            'used_chunks': used_chunks_details, # List of dicts with chunk details
-            'referenced_chunk_ids': list(referenced_chunk_ids) # List of unique string IDs found
+            'sources': source_metadata,
+            'used_chunks': used_chunks_details,
+            'referenced_chunk_ids': list(referenced_chunk_ids),
+            'attribution_mapping': attribution_mapping
         }
-        # --- End Edit 2 ---
         
         return combined_summary, metadata
         
     except openai.OpenAIError as e:
         logger.error(f"OpenAI API error: {str(e)}")
         raise ModelAPIError(f"OpenAI API error: {str(e)}")
-    except SummarizerError as e: # Catch specific internal errors
+    except SummarizerError as e:
         logger.error(f"Summarization error: {str(e)}")
-        raise # Re-raise specific error
+        raise
     except Exception as e:
-        logger.exception(f"Unexpected error generating summary: {str(e)}") # Log full traceback for unexpected errors
-        raise SummarizerError(f"An unexpected error occurred: {str(e)}") # Wrap in SummarizerError
+        logger.exception(f"Unexpected error generating summary: {str(e)}")
+        raise SummarizerError(f"An unexpected error occurred: {str(e)}")
 
 def detect_query_type(query: str) -> str:
     """
@@ -296,3 +334,72 @@ def detect_query_type(query: str) -> str:
     
     # Default to factual if no pattern matches
     return 'factual'
+
+def calculate_relevance_score(chunk: Dict[str, Any], summary: str) -> float:
+    """
+    Calculate a relevance score for a chunk based on its usage in the summary.
+    
+    Args:
+        chunk: The chunk data dictionary
+        summary: The generated summary text
+        
+    Returns:
+        A relevance score between 0 and 1
+    """
+    # Count occurrences of this chunk's ID in the summary
+    chunk_id = chunk['chunk_id']
+    citation_count = summary.count(f"[Source: {chunk_id}]")
+    
+    # Also count when it appears in multi-source citations
+    pattern = r'\[Source:.*?' + re.escape(chunk_id) + r'.*?\]'
+    multi_citations = re.findall(pattern, summary)
+    citation_count += len(multi_citations)
+    
+    # Calculate base score from citation frequency
+    base_score = min(1.0, citation_count / 5)  # Cap at 1.0, with 5 citations being "maximum relevance"
+    
+    # Adjust score based on chunk quality if available
+    quality_factor = chunk.get('quality_score', 0.5)
+    
+    # Calculate weighted score
+    return 0.7 * base_score + 0.3 * quality_factor
+
+def analyze_sentence_attribution(summary: str, chunks: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """
+    Analyze which sentences in the summary are attributed to which chunks.
+    
+    Args:
+        summary: The generated summary text
+        chunks: List of all available chunks
+        
+    Returns:
+        Dictionary mapping sentence indices to lists of chunk IDs
+    """
+    # Create a mapping of chunk IDs to their content for quick lookup
+    chunk_content_map = {chunk['chunk_id']: chunk['content'] for chunk in chunks}
+    
+    # Split summary into sentences
+    import nltk
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt', quiet=True)
+    
+    sentences = nltk.sent_tokenize(summary)
+    
+    # Analyze each sentence for citations
+    attribution_map = {}
+    for i, sentence in enumerate(sentences):
+        # Find all citations in this sentence
+        citations = re.findall(r'\[Source:\s*(.*?)(?=\])', sentence)
+        
+        # Process multiple chunk IDs in citations
+        chunk_ids = set()
+        for citation in citations:
+            ids = [chunk_id.strip() for chunk_id in citation.split(',')]
+            chunk_ids.update(id for id in ids if id)
+        
+        if chunk_ids:
+            attribution_map[str(i)] = list(chunk_ids)
+    
+    return attribution_map

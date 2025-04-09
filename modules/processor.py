@@ -1,11 +1,12 @@
 """
-Text processor for web content analysis.
+Text processor for web content analysis with enhanced chunk handling.
 
 This module handles the processing of extracted web content, including
 cleaning, sentence extraction, chunking, and quality scoring.
 """
 import asyncio
 import re
+import hashlib
 from typing import Dict, List, Optional, Any
 
 # import nltk
@@ -86,13 +87,13 @@ async def process_text(sources: List[Source]) -> List[ProcessedSource]:
 @handle_async_exceptions(ProcessorError, "Failed to process source")
 async def process_source(source: Source) -> Optional[ProcessedSource]:
     """
-    Process a single source asynchronously.
-    
+    Process a single source asynchronously with enhanced chunk handling.
+
     Args:
         source: Source data with content and metadata
-        
+
     Returns:
-        Processed source data
+        Processed source data with enhanced chunk metadata
     """
     
     # Get the content
@@ -141,32 +142,39 @@ async def process_source(source: Source) -> Optional[ProcessedSource]:
     
     # Score the content quality
     quality_score = await asyncio.to_thread(quality_scorer.score_content, source)
-    
-    # Create enhanced chunks with metadata
+
+    # Generate source-specific hash prefix to make chunk IDs more unique
+    # Use domain, title, and URL to create a more unique source identifier
+    source_identifier = f"{source.get('domain', '')}-{source.get('title', '')}-{source.get('url', '')}"
+    source_hash = hashlib.md5(source_identifier.encode()).hexdigest()[:8]
+
+    # Create enhanced chunks with improved metadata
     enhanced_chunks = []
     current_pos = 0
+
     for idx, chunk_content in enumerate(chunks):
-        # Create a unique chunk ID
-        # Note: hash() is not stable across Python processes/versions.
-        # Consider a more robust hashing like hashlib.sha1 if needed.
-        chunk_id = f"{source.get('domain', 'no_domain')}_{hash(source.get('url', 'no_url'))}_{idx}"
+        # Create a unique chunk ID with source hash prefix
+        chunk_id = f"{source_hash}_{idx}"
 
         # Find start position more robustly
         start_pos = cleaned_text.find(chunk_content, current_pos)
         if start_pos == -1:
-            # Fallback if the exact chunk isn't found (e.g., due to minor cleaning differences)
-            # Use the start of the first sentence if possible
-            first_sentence = chunk_content.split('.')[0]
-            start_pos = cleaned_text.find(first_sentence, current_pos)
+            # Try fuzzy matching for more robust position finding
+            start_pos = find_chunk_position(cleaned_text, chunk_content, current_pos)
             if start_pos == -1:
-                 # If still not found, log a warning and use approximate position
-                 logger.warning(f"Could not accurately find start position for chunk {idx} in {source.get('url', 'unknown')}. Using previous end position.")
-                 start_pos = current_pos # Approximate start
+                logger.warning(f"Could not find position for chunk {idx} in {source.get('url', 'unknown')}. Using approximate position.")
+                start_pos = current_pos
 
         end_pos = start_pos + len(chunk_content)
-        current_pos = end_pos # Update current position for next search
+        current_pos = end_pos  # Update for next search
 
-        # Create enhanced chunk dictionary
+        # Calculate chunk-specific quality score
+        chunk_quality = calculate_chunk_quality(chunk_content, quality_score, source)
+
+        # Extract key entities and terms from the chunk
+        key_terms = extract_key_terms(chunk_content)
+
+        # Create enhanced chunk dictionary with improved metadata
         enhanced_chunk = {
             "chunk_id": chunk_id,
             "source_url": source.get('url'),
@@ -174,13 +182,16 @@ async def process_source(source: Source) -> Optional[ProcessedSource]:
             "source_domain": source.get('domain'),
             "content": chunk_content,
             "position": idx,
-            "start_char": start_pos if start_pos != -1 else None, # Use None if not found
-            "end_char": end_pos if start_pos != -1 else None, # Use None if not found
-            "quality_score": quality_score  # Inherit from source for now
+            "start_char": start_pos,
+            "end_char": end_pos,
+            "quality_score": chunk_quality,
+            "key_terms": key_terms,
+            "word_count": len(chunk_content.split()),
+            "sentence_count": len(nltk.sent_tokenize(chunk_content))
         }
         enhanced_chunks.append(enhanced_chunk)
 
-    # Create processed source, now using enhanced_chunks
+    # Create processed source with enhanced chunks
     return {
         'url': source.get('url'),
         'title': source.get('title'),
@@ -283,22 +294,22 @@ def extract_important_sentences(text: str, num_sentences: int = 5) -> List[str]:
 def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
     """
     Break text into chunks of specified size.
-    
+
     This is the traditional chunking method, kept for compatibility.
-    
+
     Args:
         text: Text to chunk
         chunk_size: Maximum size of each chunk in characters
-        
+
     Returns:
         List of text chunks
     """
     # Tokenize into sentences to avoid breaking in the middle of a sentence
     sentences = nltk.sent_tokenize(text)
-    
+
     chunks: List[str] = []
     current_chunk = ""
-    
+
     for sentence in sentences:
         # If adding this sentence would exceed the chunk size, start a new chunk
         if len(current_chunk) + len(sentence) > chunk_size and current_chunk:
@@ -306,9 +317,110 @@ def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
             current_chunk = sentence
         else:
             current_chunk += " " + sentence if current_chunk else sentence
-            
+
     # Add the last chunk if not empty
     if current_chunk:
         chunks.append(current_chunk)
-        
+
     return chunks
+
+def find_chunk_position(text: str, chunk: str, start_pos: int = 0) -> int:
+    """
+    Find the position of a chunk in the text using fuzzy matching when exact match fails.
+
+    Args:
+        text: The full text to search in
+        chunk: The chunk text to find
+        start_pos: Position to start searching from
+
+    Returns:
+        Position of the chunk or -1 if not found
+    """
+    # Try exact match first (already tried in the calling function)
+
+    # Try matching first sentence of the chunk
+    chunk_sentences = nltk.sent_tokenize(chunk)
+    if chunk_sentences:
+        first_sentence = chunk_sentences[0]
+        # Try to find the first sentence
+        sent_pos = text.find(first_sentence, start_pos)
+        if sent_pos >= 0:
+            return sent_pos
+
+    # Try a sliding window approach with word-level comparison
+    chunk_words = chunk.split()
+    if len(chunk_words) < 5:
+        return -1  # Chunk too small for reliable matching
+
+    # Use first 5 words as signature
+    signature = ' '.join(chunk_words[:5])
+    signature_pos = text.find(signature, start_pos)
+    if signature_pos >= 0:
+        return signature_pos
+
+    # Last resort: approximate the position
+    return start_pos
+
+def calculate_chunk_quality(chunk_text: str, source_quality: float, source: Dict[str, Any]) -> float:
+    """
+    Calculate a quality score for the specific chunk.
+
+    Args:
+        chunk_text: The text of the chunk
+        source_quality: The overall quality score of the source
+        source: The source dictionary
+
+    Returns:
+        Quality score between 0 and 1
+    """
+    # Base the chunk quality on the source quality
+    chunk_quality = source_quality
+
+    # Adjust based on chunk-specific factors
+
+    # Length factor: penalize very short chunks
+    word_count = len(chunk_text.split())
+    if word_count < 20:
+        chunk_quality *= 0.7
+    elif word_count > 300:
+        chunk_quality *= 0.9  # Slightly penalize very long chunks
+
+    # Readability factor
+    sentences = nltk.sent_tokenize(chunk_text)
+    avg_sentence_length = sum(len(s.split()) for s in sentences) / max(1, len(sentences))
+    if avg_sentence_length > 30:
+        chunk_quality *= 0.85  # Penalize very complex sentences
+
+    # Normalize to ensure we're still between 0 and 1
+    return min(1.0, max(0.1, chunk_quality))
+
+def extract_key_terms(text: str, max_terms: int = 10) -> List[str]:
+    """
+    Extract key terms and entities from text for improved retrieval.
+
+    Args:
+        text: The text to analyze
+        max_terms: Maximum number of terms to extract
+
+    Returns:
+        List of key terms
+    """
+    try:
+        # Remove stopwords
+        stop_words = set(stopwords.words('english'))
+
+        # Tokenize and clean
+        words = nltk.word_tokenize(text.lower())
+        words = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 2]
+
+        # Count word frequencies
+        from collections import Counter
+        word_counts = Counter(words)
+
+        # Get most common words
+        return [word for word, _ in word_counts.most_common(max_terms)]
+    except Exception as e:
+        logger.warning(f"Error extracting key terms: {str(e)}")
+        # Simple fallback
+        words = [w for w in text.lower().split() if len(w) > 3]
+        return list(set(words))[:max_terms]
