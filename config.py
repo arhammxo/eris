@@ -41,6 +41,12 @@ class Config:
     
     # Text processing
     CHUNK_SIZE = int(os.environ.get('CHUNK_SIZE', 4000))  # characters
+
+    # Meta-Chunking settings
+    USE_META_CHUNKING = os.environ.get('USE_META_CHUNKING', 'True').lower() == 'true'
+    META_CHUNKING_THRESHOLD = float(os.environ.get('META_CHUNKING_THRESHOLD', 0.5))
+    USE_DYNAMIC_COMBINATION = os.environ.get('USE_DYNAMIC_COMBINATION', 'True').lower() == 'true'
+    USE_OPENAI_FOR_PPL = os.environ.get('USE_OPENAI_FOR_PPL', 'False').lower() == 'true'
     
     # User-Agent for crawler
     USER_AGENT = os.environ.get('USER_AGENT', "Mozilla/5.0 WebSummarizerBot/1.0")

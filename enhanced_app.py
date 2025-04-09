@@ -8,7 +8,7 @@ from datetime import datetime
 
 # Import application modules
 from modules.search import search_web, search_web_with_config
-from modules.integrated_crawler import integrated_crawl, cleanup_crawlers
+from modules.crawler import integrated_crawl, cleanup_crawlers
 from modules.async_processor import process_text
 from modules.async_summarizer import generate_summary
 from config import Config

@@ -27,6 +27,8 @@ from modules.utils.types import Source, ProcessedSource
 from modules.utils.errors import ProcessorError, TextAnalysisError, handle_async_exceptions
 from modules.utils.logging import get_logger
 from modules.content_quality import ContentQualityScorer
+# Import the new meta_chunking module
+from modules.meta_chunking import meta_chunk_text
 
 # Create a logger for this module
 logger = get_logger(__name__)
@@ -92,6 +94,7 @@ async def process_source(source: Source) -> Optional[ProcessedSource]:
     Returns:
         Processed source data
     """
+    
     # Get the content
     content = source.get('content', '')
     
@@ -104,15 +107,37 @@ async def process_source(source: Source) -> Optional[ProcessedSource]:
     cleaned_text = await asyncio.to_thread(clean_text, content)
     important_sentences = await asyncio.to_thread(extract_important_sentences, cleaned_text)
     
-    # Use app context if available to get chunk size
-    chunk_size = None
+    # Use app context if available to get chunking parameters
+    use_meta_chunking = True
+    chunk_size = 4000
+    
     try:
+        use_meta_chunking = current_app.config.get('USE_META_CHUNKING', True)
         chunk_size = current_app.config.get('CHUNK_SIZE', 4000)
     except RuntimeError:
         # No app context
-        chunk_size = 4000
-        
-    chunks = await asyncio.to_thread(create_chunks, cleaned_text, chunk_size)
+        pass
+    
+    # Choose chunking method based on configuration
+    if use_meta_chunking:
+        # Use the new Meta-Chunking approach
+        chunks = await meta_chunk_text(
+            cleaned_text,
+            target_chunk_size=chunk_size
+        )
+        logger.info(f"Meta-chunked content into {len(chunks)} chunks")
+    else:
+        # Use traditional chunking
+        chunks = await asyncio.to_thread(create_chunks, cleaned_text, chunk_size)
+        logger.info(f"Traditional chunking created {len(chunks)} chunks")
+    
+    # Logging block moved here, after chunks are created
+    if use_meta_chunking:
+        logger.info(f"META-CHUNKING: Created {len(chunks)} chunks using perplexity-based segmentation for {source.get('url', 'unknown')}")
+        logger.info(f"META-CHUNKING: Average chunk size: {sum(len(c) for c in chunks)/len(chunks) if chunks else 0:.1f} characters")
+    else:
+        logger.info(f"TRADITIONAL: Created {len(chunks)} chunks using sentence-based segmentation for {source.get('url', 'unknown')}")
+        logger.info(f"TRADITIONAL: Average chunk size: {sum(len(c) for c in chunks)/len(chunks) if chunks else 0:.1f} characters")
     
     # Score the content quality
     quality_score = await asyncio.to_thread(quality_scorer.score_content, source)
@@ -221,7 +246,7 @@ def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
     """
     Break text into chunks of specified size.
     
-    This is important for working with LLMs that have context length limitations.
+    This is the traditional chunking method, kept for compatibility.
     
     Args:
         text: Text to chunk
