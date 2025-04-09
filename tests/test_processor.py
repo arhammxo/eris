@@ -188,3 +188,42 @@ async def test_process_source_with_errors(mock_extract_sentences, mock_source):
     
     # extract_important_sentences should have been called
     mock_extract_sentences.assert_called_once()
+
+def test_create_chunks_with_meta_chunking():
+    """Test the create_chunks function with Meta-Chunking enabled."""
+    # Mock the app configuration
+    with patch('quart.current_app') as mock_app:
+        mock_app.config = {
+            'META_CHUNKING_ENABLED': True,
+            'META_CHUNKING_THRESHOLD': 0.5,
+            'META_CHUNKING_DYNAMIC_COMBINATION': True
+        }
+        
+        # Create a test text with distinct logical sections
+        text = """
+        Section 1: This is the first logical section. It contains related sentences that should stay together.
+        These sentences all talk about the same topic and have strong connections.
+        
+        Section 2: This begins a new logical section. The topic has shifted significantly from the previous content.
+        It introduces new concepts unrelated to what was discussed before.
+        
+        Section 3: Another distinct shift in topic occurs here. This content is separate from both previous sections.
+        The logical flow of the document has clearly moved to a new area of discussion.
+        """
+        
+        # Run chunking
+        chunks = create_chunks(text, chunk_size=200)
+        
+        # Verify chunks maintain logical sections
+        assert len(chunks) >= 3  # Should have at least 3 chunks for 3 logical sections
+        
+        # Each chunk should contain complete sentences
+        for chunk in chunks:
+            assert chunk.endswith('.') or chunk.endswith('?') or chunk.endswith('!')
+        
+        # Verify logical coherence - each chunk should primarily contain one section
+        section_markers = ["Section 1:", "Section 2:", "Section 3:"]
+        for chunk in chunks:
+            # Count section markers in each chunk - should typically only have one
+            markers_in_chunk = sum(1 for marker in section_markers if marker in chunk)
+            assert markers_in_chunk <= 1

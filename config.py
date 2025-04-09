@@ -63,3 +63,8 @@ class Config:
     SUPPORTED_FILE_EXTENSIONS = os.environ.get('SUPPORTED_FILE_EXTENSIONS', 
                                              '.txt,.pdf,.docx,.doc,.md,.csv,.json,.xml,.html,.htm,.rtf').split(',')
     MAX_CONCURRENT_EXTRACTIONS = int(os.environ.get('MAX_CONCURRENT_EXTRACTIONS', 5))
+
+    # Meta-Chunking settings
+    META_CHUNKING_ENABLED = os.environ.get('META_CHUNKING_ENABLED', 'True').lower() == 'true'
+    META_CHUNKING_THRESHOLD = float(os.environ.get('META_CHUNKING_THRESHOLD', '0.5'))
+    META_CHUNKING_DYNAMIC_COMBINATION = os.environ.get('META_CHUNKING_DYNAMIC_COMBINATION', 'True').lower() == 'true'

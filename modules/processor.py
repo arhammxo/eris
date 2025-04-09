@@ -222,6 +222,7 @@ def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
     Break text into chunks of specified size.
     
     This is important for working with LLMs that have context length limitations.
+    Uses Meta-Chunking if enabled, falling back to sentence-based chunking.
     
     Args:
         text: Text to chunk
@@ -230,7 +231,34 @@ def create_chunks(text: str, chunk_size: int = 4000) -> List[str]:
     Returns:
         List of text chunks
     """
-    # Tokenize into sentences to avoid breaking in the middle of a sentence
+    # Check if Meta-Chunking is enabled
+    use_meta_chunking = False
+    threshold = 0.5
+    dynamic_combination = True
+    
+    try:
+        from quart import current_app
+        use_meta_chunking = current_app.config.get('META_CHUNKING_ENABLED', False)
+        threshold = current_app.config.get('META_CHUNKING_THRESHOLD', 0.5)
+        dynamic_combination = current_app.config.get('META_CHUNKING_DYNAMIC_COMBINATION', True)
+    except (RuntimeError, ImportError):
+        # No app context or meta_chunking not imported
+        use_meta_chunking = False
+    
+    if use_meta_chunking:
+        try:
+            from modules.meta_chunking import MetaChunker
+            chunker = MetaChunker(
+                threshold=threshold,
+                max_tokens_per_chunk=chunk_size,
+                use_dynamic_combination=dynamic_combination
+            )
+            return chunker.chunk_text(text)
+        except Exception as e:
+            logger.warning(f"Meta-Chunking failed, falling back to sentence-based chunking: {str(e)}")
+            # Fall back to sentence-based chunking
+    
+    # Traditional sentence-based chunking (original implementation)
     sentences = nltk.sent_tokenize(text)
     
     chunks: List[str] = []
