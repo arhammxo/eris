@@ -422,114 +422,60 @@
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize text-to-speech functionality
-        initTTS();
+    // First, let's create a debug utility to help us troubleshoot
+    function debug(message, obj = null) {
+        console.log(`DEBUG: ${message}`);
+        if (obj) console.log(obj);
         
-        // Copy summary functionality
-        const copyButton = document.getElementById('copy-summary');
-        if (copyButton) {
-            copyButton.addEventListener('click', function() {
-                const summaryTextElement = document.querySelector('.summary-content');
-                if (summaryTextElement) {
-                    // Get clean text without citations
-                    const summaryText = summaryTextElement.innerText.replace(/\[Source:.*?\]/g, '');
-                    navigator.clipboard.writeText(summaryText)
-                        .then(() => {
-                            this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
-                            setTimeout(() => {
-                                this.innerHTML = '<i class="bi bi-clipboard"></i> Copy Summary';
-                            }, 2000);
-                        })
-                        .catch(err => {
-                            console.error('Failed to copy summary:', err);
-                            alert('Failed to copy summary');
-                        });
-                }
-            });
+        // Also output to a debug panel if it exists
+        const debugPanel = document.getElementById('debug-panel');
+        if (debugPanel) {
+            const entry = document.createElement('div');
+            entry.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            debugPanel.appendChild(entry);
+            debugPanel.scrollTop = debugPanel.scrollHeight;
         }
-        
-        // Copy with citations functionality
-        const copyWithCitationsButton = document.getElementById('copy-with-citations');
-        if (copyWithCitationsButton) {
-            copyWithCitationsButton.addEventListener('click', function() {
-                const summaryTextElement = document.querySelector('.summary-content');
-                if (summaryTextElement) {
-                    const summaryText = summaryTextElement.innerText;
-                    navigator.clipboard.writeText(summaryText)
-                        .then(() => {
-                            this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
-                            setTimeout(() => {
-                                this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copy With Citations';
-                            }, 2000);
-                        })
-                        .catch(err => {
-                            console.error('Failed to copy summary with citations:', err);
-                            alert('Failed to copy summary with citations');
-                        });
-                }
-            });
-        }
-        
-        // Share functionality
-        const shareButton = document.getElementById('share-button');
-        if (shareButton) {
-            shareButton.addEventListener('click', function() {
-                if (navigator.share) {
-                    const summaryTextElement = document.querySelector('.summary-content');
-                    const summaryText = summaryTextElement ? summaryTextElement.innerText.replace(/\[Source:.*?\]/g, '').substring(0, 100) + '...' : 'Check out these results';
-                    navigator.share({
-                        title: 'Web Summary: {{ query }}',
-                        text: summaryText,
-                        url: window.location.href,
-                    })
-                    .catch(err => {
-                        // Silently handle share errors or log them
-                        console.log('Share cancelled or failed:', err);
-                    });
-                } else {
-                    alert('Web Share API not supported in your browser. You can copy the URL manually.');
-                }
-            });
-        }
+    }
 
-        // Initialize variables for chunk reference UI
-        const summaryContent = document.getElementById('summary-content');
-        const chunksContainer = document.getElementById('chunks-container');
-        const chunkFilter = document.getElementById('chunk-filter');
-        const chunkSort = document.getElementById('chunk-sort');
-        const toggleHighlight = document.getElementById('toggle-highlight');
-        const expandAllButton = document.getElementById('expand-all-chunks');
+    // Create a function to check if Bootstrap is available
+    function isBootstrapAvailable() {
+        return typeof bootstrap !== 'undefined';
+    }
+
+    // Wait for DOM to be fully loaded AND ensure Bootstrap is available
+    document.addEventListener('DOMContentLoaded', function() {
+        debug("DOM loaded, initializing...");
         
-        // Process summary to highlight citations and structure sentences
+        // First check if Bootstrap is available
+        if (!isBootstrapAvailable()) {
+            debug("WARNING: Bootstrap is not available. Modal and tab functionality may not work.");
+        } else {
+            debug("Bootstrap is available");
+        }
+        
+        // Initialize basic functionality
+        initTTS();
         processSummaryContent();
-        
-        // Create attribution map visualization
         createAttributionMap();
         
-        // Add event listeners for chunk features
-        if (chunkFilter) {
-            chunkFilter.addEventListener('input', filterChunks);
-        }
-
-        if (chunkSort) {
-            chunkSort.addEventListener('change', sortChunks);
-            // Initial sort by relevance
-            sortChunks();
-        }
-
-        if (toggleHighlight) {
-            toggleHighlight.addEventListener('click', toggleCitationHighlights);
-        }
+        // --- DIRECT BUTTON BINDING ---
+        // This approach manually finds and binds each button that exists at load time
         
-        if (expandAllButton) {
-            expandAllButton.addEventListener('click', toggleExpandAllChunks);
-        }
+        // Attach handlers for Show More buttons
+        const expandButtons = document.querySelectorAll('.expand-chunk');
+        debug(`Found ${expandButtons.length} expand buttons`);
         
-        // Add event listeners for chunk context controls
-        document.querySelectorAll('.expand-chunk').forEach(button => {
-            button.addEventListener('click', function() {
-                const chunkContent = this.closest('.chunk-item').querySelector('.chunk-content');
+        expandButtons.forEach((button, index) => {
+            debug(`Adding click handler to expand button ${index}`);
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                debug(`Expand button ${index} clicked`);
+                const chunkContent = this.closest('.chunk-item')?.querySelector('.chunk-content');
+                if (!chunkContent) {
+                    debug("Error: Could not find chunk content element");
+                    return;
+                }
+                
                 if (chunkContent.classList.contains('collapsed')) {
                     chunkContent.classList.remove('collapsed');
                     chunkContent.classList.add('expanded');
@@ -542,28 +488,202 @@
             });
         });
         
-        // Add event listeners for "View in Source" buttons
-        document.querySelectorAll('.view-in-source').forEach(button => {
-            button.addEventListener('click', function() {
+        // Attach handlers for View in Source buttons
+        const viewSourceButtons = document.querySelectorAll('.view-in-source');
+        debug(`Found ${viewSourceButtons.length} view source buttons`);
+        
+        viewSourceButtons.forEach((button, index) => {
+            debug(`Adding click handler to view source button ${index}`);
+            button.addEventListener('click', function(e) {
+                e.preventDefault();
+                debug(`View source button ${index} clicked`);
+                
                 const chunkItem = this.closest('.chunk-item');
-                const chunkId = chunkItem.dataset.chunkId;
-                const sourceTitle = chunkItem.querySelector('.card-subtitle a').textContent;
-                const sourceUrl = chunkItem.querySelector('.card-subtitle a').href;
-                const chunkContent = chunkItem.querySelector('.chunk-content').innerText;
+                if (!chunkItem) {
+                    debug("Error: Could not find chunk item");
+                    return;
+                }
                 
-                // Get the full source content
-                const fullSource = getFullSourceContent(sourceUrl);
+                const chunkId = chunkItem.dataset.chunkId || '';
+                const sourceTitle = chunkItem.querySelector('.card-subtitle a')?.textContent || 'Unknown Source';
+                const sourceUrl = chunkItem.querySelector('.card-subtitle a')?.href || '#';
+                const chunkContent = chunkItem.querySelector('.chunk-content')?.textContent || '';
                 
-                // Find the chunk in the full content and highlight it
-                showSourceContext(sourceTitle, fullSource, chunkContent, sourceUrl);
+                try {
+                    const fullSource = getFullSourceContent(sourceUrl);
+                    showSourceContext(sourceTitle, fullSource, chunkContent, sourceUrl);
+                } catch (error) {
+                    debug("Error showing source context: " + error.message);
+                }
             });
         });
+        
+        // Attach handler to Expand All button
+        const expandAllButton = document.getElementById('expand-all-chunks');
+        if (expandAllButton) {
+            debug("Found expand all button, adding handler");
+            expandAllButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                debug("Expand all button clicked");
+                toggleExpandAllChunks();
+            });
+        } else {
+            debug("Error: Expand all button not found");
+        }
+        
+        // Attach handler to Toggle Highlights button
+        const toggleHighlightButton = document.getElementById('toggle-highlight');
+        if (toggleHighlightButton) {
+            debug("Found toggle highlight button, adding handler");
+            toggleHighlightButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                debug("Toggle highlight button clicked");
+                toggleCitationHighlights();
+            });
+        } else {
+            debug("Error: Toggle highlight button not found");
+        }
+        
+        // Attach handler to filter and sort controls
+        const chunkFilter = document.getElementById('chunk-filter');
+        if (chunkFilter) {
+            debug("Found chunk filter, adding handler");
+            chunkFilter.addEventListener('input', function() {
+                debug("Filter input: " + this.value);
+                filterChunks();
+            });
+        } else {
+            debug("Error: Chunk filter not found");
+        }
+        
+        const chunkSort = document.getElementById('chunk-sort');
+        if (chunkSort) {
+            debug("Found chunk sort, adding handler");
+            chunkSort.addEventListener('change', function() {
+                debug("Sort changed to: " + this.value);
+                sortChunks();
+            });
+            
+            // Initial sort
+            debug("Performing initial sort");
+            sortChunks();
+        } else {
+            debug("Error: Chunk sort not found");
+        }
+
+        // Attach copy/share handlers
+        const copyButton = document.getElementById('copy-summary');
+        if (copyButton) {
+            copyButton.addEventListener('click', function() {
+                const summaryTextElement = document.querySelector('.summary-content');
+                if (summaryTextElement) {
+                    const summaryText = summaryTextElement.innerText.replace(/\[Source:.*?\]/g, '');
+                    navigator.clipboard.writeText(summaryText)
+                        .then(() => {
+                            this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
+                            setTimeout(() => { this.innerHTML = '<i class="bi bi-clipboard"></i> Copy Summary'; }, 2000);
+                        })
+                        .catch(err => { debug('Failed to copy summary:', err); alert('Failed to copy summary'); });
+                }
+            });
+        }
+        
+        const copyWithCitationsButton = document.getElementById('copy-with-citations');
+        if (copyWithCitationsButton) {
+            copyWithCitationsButton.addEventListener('click', function() {
+                const summaryTextElement = document.querySelector('.summary-content');
+                if (summaryTextElement) {
+                    const summaryText = summaryTextElement.innerText;
+                    navigator.clipboard.writeText(summaryText)
+                        .then(() => {
+                            this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
+                            setTimeout(() => { this.innerHTML = '<i class="bi bi-clipboard-check"></i> Copy With Citations'; }, 2000);
+                        })
+                        .catch(err => { debug('Failed to copy summary with citations:', err); alert('Failed to copy summary with citations'); });
+                }
+            });
+        }
+        
+        const shareButton = document.getElementById('share-button');
+        if (shareButton) {
+            shareButton.addEventListener('click', function() {
+                if (navigator.share) {
+                    const summaryTextElement = document.querySelector('.summary-content');
+                    const summaryText = summaryTextElement ? summaryTextElement.innerText.replace(/\[Source:.*?\]/g, '').substring(0, 100) + '...' : 'Check out these results';
+                    navigator.share({
+                        title: 'Web Summary: {{ query }}',
+                        text: summaryText,
+                        url: window.location.href,
+                    })
+                    .catch(err => { debug('Share cancelled or failed:', err); });
+                } else {
+                    alert('Web Share API not supported in your browser. You can copy the URL manually.');
+                }
+            });
+        }
+
+        // --- BACKUP EVENT DELEGATION ---
+        // This is a backup approach using event delegation for any dynamically added buttons
+        
+        debug("Setting up event delegation for dynamic elements");
+        document.body.addEventListener('click', function(event) {
+            const target = event.target;
+            
+            // Check if the click was on an expand button or its child elements
+            // Check if the button already has a direct handler (to avoid double execution)
+            const expandButton = target.closest('.expand-chunk');
+            if (expandButton && !expandButton.hasAttribute('data-direct-handler')) {
+                debug("Expand button clicked via delegation");
+                const chunkContent = expandButton.closest('.chunk-item')?.querySelector('.chunk-content');
+                if (chunkContent) {
+                if (chunkContent.classList.contains('collapsed')) {
+                    chunkContent.classList.remove('collapsed');
+                    chunkContent.classList.add('expanded');
+                        expandButton.innerHTML = '<i class="bi bi-arrows-collapse"></i> Show Less';
+                } else {
+                    chunkContent.classList.remove('expanded');
+                    chunkContent.classList.add('collapsed');
+                        expandButton.innerHTML = '<i class="bi bi-arrows-expand"></i> Show More';
+                    }
+                }
+                return; // Prevent further checks
+            }
+            
+            // Check if the click was on a view source button
+            const viewSourceButton = target.closest('.view-in-source');
+            if (viewSourceButton && !viewSourceButton.hasAttribute('data-direct-handler')) {
+                debug("View source button clicked via delegation");
+                const chunkItem = viewSourceButton.closest('.chunk-item');
+                if (chunkItem) {
+                    const chunkId = chunkItem.dataset.chunkId || '';
+                    const sourceTitle = chunkItem.querySelector('.card-subtitle a')?.textContent || 'Unknown Source';
+                    const sourceUrl = chunkItem.querySelector('.card-subtitle a')?.href || '#';
+                    const chunkContent = chunkItem.querySelector('.chunk-content')?.textContent || '';
+                    
+                    try {
+                const fullSource = getFullSourceContent(sourceUrl);
+                showSourceContext(sourceTitle, fullSource, chunkContent, sourceUrl);
+                    } catch (error) {
+                        debug("Error showing source context: " + error.message);
+                    }
+                }
+                return; // Prevent further checks
+            }
+            
+            // Mark buttons that have direct handlers to avoid double execution from delegation
+            document.querySelectorAll('.expand-chunk, .view-in-source').forEach(btn => btn.setAttribute('data-direct-handler', 'true'));
+        });
+
+        // Uncomment this line to enable the debug panel
+        // addDebugPanel();
     });
 
     function initTTS() {
         // Check if Speech Synthesis is supported
         if (!('speechSynthesis' in window)) {
-            document.querySelector('.speech-controls').style.display = 'none';
+            const speechControls = document.querySelector('.speech-controls');
+            if(speechControls) speechControls.style.display = 'none';
+            debug("Speech Synthesis not supported.");
             return;
         }
         
@@ -579,6 +699,7 @@
         
         // If any required elements are missing, exit
         if (!playBtn || !pauseBtn || !stopBtn || !summaryContent) {
+            debug("TTS Error: Missing essential control elements.");
             return;
         }
         
@@ -590,6 +711,7 @@
         function speak() {
             if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.cancel();
+                debug("TTS: Cancelled previous speech.");
             }
             
             // Get the summary text without citations
@@ -597,10 +719,12 @@
             
             if (!text || text.trim() === '') {
                 updateStatus('No text content to speak');
+                debug("TTS: No text content.");
                 return;
             }
             
             utterance = new SpeechSynthesisUtterance(text);
+            debug("TTS: Utterance created.");
             
             // Set rate if available
             if (rateSlider) {
@@ -611,10 +735,13 @@
             if (voiceSelect && voiceSelect.selectedIndex > 0) {
                 const voices = window.speechSynthesis.getVoices();
                 const selectedOption = voiceSelect.options[voiceSelect.selectedIndex];
+                const selectedVoiceName = selectedOption.textContent.split(' (')[0];
                 
+                debug(`TTS: Trying to find voice: ${selectedVoiceName}`);
                 for (const voice of voices) {
-                    if (voice.name === selectedOption.textContent.split(' (')[0]) {
+                    if (voice.name === selectedVoiceName) {
                         utterance.voice = voice;
+                        debug(`TTS: Voice set to ${voice.name}`);
                         break;
                     }
                 }
@@ -624,16 +751,34 @@
             utterance.onstart = function() {
                 updateControlsState(true);
                 updateStatus('Speaking...');
+                debug("TTS: Started speaking.");
             };
             
             utterance.onend = function() {
                 updateControlsState(false);
                 updateStatus('Finished speaking');
+                debug("TTS: Finished speaking.");
+                isPaused = false; // Reset pause state
             };
             
             utterance.onerror = function(e) {
                 updateControlsState(false);
                 updateStatus('Error: ' + (e.error || 'unknown error'));
+                debug('TTS Error: ' + (e.error || 'unknown error'));
+            };
+            
+             utterance.onpause = function() {
+                isPaused = true;
+                pauseBtn.innerHTML = '<i class="bi bi-play-fill"></i> Resume';
+                updateStatus('Paused');
+                debug("TTS: Paused.");
+            };
+            
+            utterance.onresume = function() {
+                isPaused = false;
+                pauseBtn.innerHTML = '<i class="bi bi-pause-fill"></i> Pause';
+                updateStatus('Resumed speaking');
+                debug("TTS: Resumed.");
             };
             
             // Start speaking
@@ -641,6 +786,7 @@
                 window.speechSynthesis.speak(utterance);
             } catch (error) {
                 updateStatus('Error starting speech');
+                debug('TTS Error starting speech: ' + error);
             }
         }
         
@@ -649,14 +795,8 @@
             if (window.speechSynthesis.speaking) {
                 if (isPaused) {
                     window.speechSynthesis.resume();
-                    isPaused = false;
-                    pauseBtn.innerHTML = '<i class="bi bi-pause-fill"></i> Pause';
-                    updateStatus('Resumed speaking');
                 } else {
                     window.speechSynthesis.pause();
-                    isPaused = true;
-                    pauseBtn.innerHTML = '<i class="bi bi-play-fill"></i> Resume';
-                    updateStatus('Paused');
                 }
             }
         }
@@ -665,8 +805,14 @@
         function stopSpeaking() {
             if (window.speechSynthesis.speaking) {
                 window.speechSynthesis.cancel();
+                // onend event will handle state update
+                debug("TTS: Stop requested.");
+            } else {
+                 // If not speaking, reset state manually
                 updateControlsState(false);
                 updateStatus('Stopped');
+                 isPaused = false;
+                 debug("TTS: Stop requested (was not speaking).");
             }
         }
         
@@ -674,7 +820,8 @@
         function updateControlsState(isSpeaking) {
             playBtn.disabled = isSpeaking;
             pauseBtn.disabled = !isSpeaking;
-            stopBtn.disabled = !isSpeaking;
+            stopBtn.disabled = !isSpeaking || isPaused; // Also disable stop if paused initially? Maybe not. Let's allow stopping when paused.
+            stopBtn.disabled = !isSpeaking; // Simplification: Only enable stop/pause when speaking.
         }
         
         // Update status display
@@ -682,7 +829,6 @@
             if (statusElement) {
                 statusElement.innerHTML = ''; // Clear previous content
                 if (message === 'Speaking...' || message === 'Resumed speaking') {
-                    // Create and append the indicator span dynamically if needed
                     const indicator = document.createElement('span');
                     indicator.className = 'speaking-indicator'; 
                     statusElement.appendChild(indicator);
@@ -697,35 +843,45 @@
         function populateVoiceList() {
             if (!voiceSelect) return;
             
+            const voices = window.speechSynthesis.getVoices();
+            debug(`TTS: Found ${voices.length} voices.`);
+            
+            if (voices.length === 0) {
+                debug("TTS: No voices yet, retrying...");
+                setTimeout(populateVoiceList, 100); // Retry
+                return;
+            }
+            
+            // Store current selection if possible
+            const currentSelection = voiceSelect.value;
+            
             // Clear existing options (keeping the default)
             while (voiceSelect.options.length > 1) {
                 voiceSelect.remove(1);
             }
             
-            // Get available voices
-            const voices = window.speechSynthesis.getVoices();
-            
-            if (voices.length === 0) {
-                // Try again later if no voices yet
-                setTimeout(populateVoiceList, 100);
-                return;
-            }
-            
-            // Add options for each voice
+            let foundDefault = false;
             for (const voice of voices) {
                 const option = document.createElement('option');
-                option.textContent = voice.name + ' (' + voice.lang + ')';
+                option.textContent = `${voice.name} (${voice.lang})`;
+                option.setAttribute('data-lang', voice.lang);
+                option.setAttribute('data-name', voice.name);
                 
-                // Select English voice if available
-                if (voice.lang && voice.lang.startsWith('en-') && voice.default) {
+                if (voice.name === currentSelection) {
                     option.selected = true;
+                     foundDefault = true;
+                } else if (!foundDefault && voice.lang && voice.lang.startsWith('en-') && voice.default) {
+                    // Prefer default English voice if no specific selection was made/found
+                    option.selected = true;
+                    foundDefault = true;
                 }
                 
                 voiceSelect.appendChild(option);
             }
+            debug("TTS: Voice list populated.");
         }
         
-        // Attempt to load voices and set up event for when they change
+        // Initial population and event listener for changes
         populateVoiceList();
         if (window.speechSynthesis.onvoiceschanged !== undefined) {
             window.speechSynthesis.onvoiceschanged = populateVoiceList;
@@ -740,106 +896,179 @@
             rateSlider.addEventListener('input', function() {
                 const rate = this.value;
                 rateValue.textContent = rate + 'x';
+                if (utterance && window.speechSynthesis.speaking) {
+                     // Update rate dynamically if speaking
+                     utterance.rate = parseFloat(rate);
+                }
             });
         }
         
-        // Chrome bug fix - speech stops after ~60 seconds
+        // Chrome bug fix - speech stops after ~60 seconds without interaction
         if (/Chrome/.test(navigator.userAgent)) {
-            setInterval(function() {
+            let keepAliveInterval = null;
+            window.addEventListener('beforeunload', () => {
+                 if (keepAliveInterval) clearInterval(keepAliveInterval);
+            });
+            
+            utterance = new SpeechSynthesisUtterance(''); // Dummy utterance for interval check
+            utterance.onstart = () => {
+                if (!keepAliveInterval) {
+                     keepAliveInterval = setInterval(() => {
                 if (window.speechSynthesis.speaking && !isPaused) {
+                             debug("TTS: Chrome keep-alive pause/resume");
                     window.speechSynthesis.pause();
                     window.speechSynthesis.resume();
+                         } else if (!window.speechSynthesis.speaking) {
+                             debug("TTS: Speech ended, clearing keep-alive interval.");
+                             clearInterval(keepAliveInterval);
+                             keepAliveInterval = null;
                 }
             }, 10000); // Every 10 seconds
+                }
+            };
+             utterance.onend = () => {
+                 if (keepAliveInterval) {
+                      debug("TTS: Speech ended, clearing keep-alive interval (onend).");
+                      clearInterval(keepAliveInterval);
+                      keepAliveInterval = null;
+                 }
+             };
         }
         
         updateStatus('Ready to speak');
+        debug("TTS: Initialized successfully.");
     }
 
     // Process the summary to highlight citations and structure sentences
     function processSummaryContent() {
         const summaryContent = document.getElementById('summary-content');
-        if (!summaryContent) return;
+        if (!summaryContent) {
+            debug("Error: Summary content element not found");
+            return;
+        }
+        debug("Processing summary content...");
 
-        // Use a more specific regex to avoid matching within attributes
-        const citationRegex = /(?<!data-chunk-id=")(\[Source: ([^\]]+)\])/g;
+        // Regex to find [Source: id] but avoid matching inside tags like data-chunk-id="[Source: id]"
+        const citationRegex = /(?<!=")(\[Source:\s*([^\]]+?)\])/g;
         let summaryHTML = summaryContent.innerHTML;
         let citationsFound = false;
 
         // Wrap citations in spans with data attributes
         summaryHTML = summaryHTML.replace(citationRegex, (match, fullMatch, chunkId) => {
             citationsFound = true;
-            // Handle multiple comma-separated IDs
             const chunkIds = chunkId.split(',').map(id => id.trim()).join(',');
+            debug(`Found citation: ${fullMatch} -> ID(s): ${chunkIds}`);
             return `<span class="citation-highlight" data-chunk-id="${chunkIds}" role="button" tabindex="0" title="Go to source ${chunkIds}">${fullMatch}</span>`;
         });
 
-        if (citationsFound) {
-            // Next, split into sentences for sentence-level attribution
-            // First save the HTML with citation spans
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = summaryHTML;
-            
-            // Get the text content for sentence splitting
-            const textContent = tempDiv.textContent;
-            
-            // Use NLTK-like sentence tokenization regex
-            const sentenceEndRegex = /(?<=[.!?])\s+(?=[A-Z])/g;
-            
-            // Check if we have attribution mapping in metadata
+        if (!citationsFound) {
+            debug("No citations found in summary.");
+        }
+        
+        // Update the HTML with citation spans first
+        summaryContent.innerHTML = summaryHTML;
+
+        // Now handle sentence highlighting if attribution data exists
             const attributionMapping = {{ metadata.attribution_mapping|tojson|safe if metadata.attribution_mapping else '{}' }};
-            
             if (Object.keys(attributionMapping).length > 0) {
-                // Split text and wrap sentences with attribution data
-                const sentences = textContent.split(sentenceEndRegex);
-                
-                // Replace the content with sentence-wrapped version
-                let newContent = '';
-                for (let i = 0; i < sentences.length; i++) {
-                    const sentenceIndex = i.toString();
-                    const sentenceChunks = attributionMapping[sentenceIndex] || [];
-                    const chunkAttr = sentenceChunks.join(',');
-                    
-                    // Find this sentence in the HTML
-                    const sentenceEscaped = sentences[i].replace(/[.*+?^${}()|[\]\\]/g, '\\        // Wrap citations in spans with data attributes
-        summaryHTML = summaryHTML');
-                    const sentenceRegex = new RegExp(`(${sentenceEscaped})(?![^<]*>)`, 'g');
-                    
-                    // Replace with wrapped version
-                    summaryHTML = summaryHTML.replace(
-                        sentenceRegex,
-                        `<span class="sentence-highlight" data-sentence-index="${i}" data-attributed-chunks="${chunkAttr}">$1</span>`
-                    );
-                }
+            debug("Attribution mapping found, processing sentences.");
+            
+            // Use a more robust way to iterate through text nodes and wrap sentences
+            const walker = document.createTreeWalker(summaryContent, NodeFilter.SHOW_TEXT, null, false);
+            let node;
+            const sentencesToWrap = [];
+
+            while (node = walker.nextNode()) {
+                 // Ignore text nodes inside script/style or citation spans
+                 if (node.parentElement.closest('script, style, .citation-highlight')) {
+                     continue;
+                 }
+
+                 // Regex to split sentences, keeping delimiters attached to the preceding sentence.
+                 // Handles ., !, ?, and multiple occurrences, followed by space and uppercase or end of string.
+                 const sentenceRegex = /([^.!?]+[.!?]+)(?=\s+[A-Z]|\s*$|$)/g;
+                 let match;
+                 let lastIndex = 0;
+                 let currentSentenceIndex = Object.keys(sentencesToWrap).length; // Approximates sentence index
+
+                 while ((match = sentenceRegex.exec(node.textContent)) !== null) {
+                     const sentenceText = match[0].trim();
+                     if (sentenceText.length > 1) { // Avoid matching empty strings or just punctuation
+                          const sentenceIndexStr = currentSentenceIndex.toString(); // Use approximate index
+                          const sentenceChunks = attributionMapping[sentenceIndexStr] || [];
+                          const chunkAttr = sentenceChunks.join(',');
+                          sentencesToWrap.push({
+                              node: node,
+                              start: match.index - sentenceText.length, // Adjust start index based on match
+                              end: match.index,
+                              text: sentenceText,
+                              index: sentenceIndexStr,
+                              chunks: chunkAttr
+                          });
+                          currentSentenceIndex++;
+                     }
+                     lastIndex = match.index;
+                 }
+                 
+                 // Handle the last part of the text node if it doesn't end with punctuation
+                 const remainingText = node.textContent.substring(lastIndex).trim();
+                 if (remainingText.length > 1) {
+                      const sentenceIndexStr = currentSentenceIndex.toString();
+                      const sentenceChunks = attributionMapping[sentenceIndexStr] || [];
+                      const chunkAttr = sentenceChunks.join(',');
+                      sentencesToWrap.push({
+                          node: node,
+                          start: lastIndex,
+                          end: node.textContent.length,
+                          text: remainingText,
+                          index: sentenceIndexStr,
+                          chunks: chunkAttr
+                      });
+                 }
             }
             
-            // Update the HTML
-            summaryContent.innerHTML = summaryHTML;
+             debug(`Found ${sentencesToWrap.length} potential sentences to wrap.`);
 
-            // Add click and keyboard event listeners to citations
+            // Wrap sentences in reverse order to avoid index issues
+            for (let i = sentencesToWrap.length - 1; i >= 0; i--) {
+                const item = sentencesToWrap[i];
+                try {
+                    const range = document.createRange();
+                    range.setStart(item.node, item.start);
+                    range.setEnd(item.node, item.end);
+                    
+                    const span = document.createElement('span');
+                    span.className = 'sentence-highlight';
+                    span.dataset.sentenceIndex = item.index;
+                    if(item.chunks) span.dataset.attributedChunks = item.chunks;
+                    
+                    range.surroundContents(span);
+                } catch (e) {
+                     debug(`Error wrapping sentence index ${item.index}: ${e.message}`);
+                }
+            }
+        } else {
+             debug("No attribution mapping found.");
+        }
+
+        // Add event listeners AFTER HTML manipulation
             document.querySelectorAll('.citation-highlight').forEach(citation => {
                 const action = () => {
                     const chunkIds = citation.dataset.chunkId.split(',');
-                    // Highlight all referenced chunks
-                    chunkIds.forEach(chunkId => {
-                        highlightChunk(chunkId.trim());
-                    });
+                debug(`Citation clicked/activated for chunk(s): ${chunkIds.join(', ')}`);
+                chunkIds.forEach(chunkId => highlightChunk(chunkId.trim()));
                     switchToChunksTab();
-                    // Scroll to the first chunk
-                    if (chunkIds.length > 0) {
-                        scrollToChunk(chunkIds[0].trim());
-                    }
+                if (chunkIds.length > 0) scrollToChunk(chunkIds[0].trim());
                 };
                 citation.addEventListener('click', action);
                 citation.addEventListener('keydown', (event) => {
                      if (event.key === 'Enter' || event.key === ' ') {
-                         event.preventDefault(); // Prevent space bar scrolling
+                    event.preventDefault();
                          action();
                      }
                  });
             });
             
-            // Add listeners for sentence highlighting
             document.querySelectorAll('.sentence-highlight').forEach(sentence => {
                 sentence.addEventListener('mouseover', () => {
                     const chunks = sentence.dataset.attributedChunks;
@@ -847,9 +1076,7 @@
                         const chunkIds = chunks.split(',');
                         chunkIds.forEach(chunkId => {
                             const chunkElement = document.querySelector(`.chunk-item[data-chunk-id="${chunkId.trim()}"]`);
-                            if (chunkElement) {
-                                chunkElement.classList.add('highlight-hover');
-                            }
+                        if (chunkElement) chunkElement.classList.add('highlight-hover');
                         });
                     }
                 });
@@ -865,6 +1092,7 @@
                     if (chunks) {
                         const chunkIds = chunks.split(',');
                         if (chunkIds.length > 0) {
+                        debug(`Sentence clicked, highlighting chunk: ${chunkIds[0].trim()}`);
                             switchToChunksTab();
                             highlightChunk(chunkIds[0].trim());
                             scrollToChunk(chunkIds[0].trim());
@@ -872,57 +1100,61 @@
                     }
                 });
             });
-        }
+        debug("Summary processing complete.");
     }
 
     // Create a visual attribution map
     function createAttributionMap() {
         const attributionMap = document.getElementById('attribution-map');
-        if (!attributionMap) return;
+        if (!attributionMap) {
+             debug("Attribution map element not found.");
+             return;
+        }
+        debug("Creating attribution map...");
         
-        // Get citation data from the summary
         const citations = document.querySelectorAll('.citation-highlight');
-        if (citations.length === 0) return;
+        if (citations.length === 0) {
+            debug("No citations found, skipping map creation.");
+            attributionMap.closest('.card').style.display = 'none'; // Hide the card if no map
+            return;
+        }
         
-        // Count occurrences of each chunk ID
         const chunkCounts = {};
         citations.forEach(citation => {
             const chunkIds = citation.dataset.chunkId.split(',');
             chunkIds.forEach(chunkId => {
                 chunkId = chunkId.trim();
-                chunkCounts[chunkId] = (chunkCounts[chunkId] || 0) + 1;
+                if (chunkId) chunkCounts[chunkId] = (chunkCounts[chunkId] || 0) + 1;
             });
         });
         
-        // Get all unique chunk IDs from the citations
         const uniqueChunks = Object.keys(chunkCounts);
-        if (uniqueChunks.length === 0) return;
+        if (uniqueChunks.length === 0) {
+             debug("No valid chunk IDs found in citations.");
+             attributionMap.closest('.card').style.display = 'none';
+             return;
+        }
+        debug(`Found ${uniqueChunks.length} unique chunks for map.`);
         
-        // Create map visualization
         const mapRow = document.createElement('div');
         mapRow.className = 'attribution-map-row';
         
-        // Find max count for color scaling
-        const maxCount = Math.max(...Object.values(chunkCounts));
+        const maxCount = Math.max(...Object.values(chunkCounts), 1); // Avoid division by zero
         
-        // Create a cell for each chunk
         uniqueChunks.forEach(chunkId => {
             const cell = document.createElement('div');
             cell.className = 'attribution-map-cell';
             cell.dataset.chunkId = chunkId;
             
-            // Calculate color intensity based on citation count
             const count = chunkCounts[chunkId];
-            const intensity = Math.max(0.2, count / maxCount); // At least 20% opacity
+            const intensity = Math.max(0.2, count / maxCount); // Ensure minimum visibility
             
-            // Create color gradient from light to dark blue
+            // Color: light blue (173, 216, 230) to dark blue (0, 0, 139) -> Use Bootstrap primary blue with opacity
             cell.style.backgroundColor = `rgba(13, 110, 253, ${intensity})`;
+            cell.title = `Chunk ${chunkId.split('_').pop() || chunkId}: Referenced ${count} times`;
             
-            // Add tooltip
-            cell.title = `Chunk ${chunkId.split('_')[1] || chunkId}: Referenced ${count} times`;
-            
-            // Add click handler to highlight the chunk
             cell.addEventListener('click', () => {
+                debug(`Attribution map cell clicked for chunk: ${chunkId}`);
                 highlightChunk(chunkId);
                 switchToChunksTab();
                 scrollToChunk(chunkId);
@@ -931,49 +1163,67 @@
             mapRow.appendChild(cell);
         });
         
+        // Clear previous map if any and append new one
+        attributionMap.innerHTML = ''; 
         attributionMap.appendChild(mapRow);
+        debug("Attribution map created.");
     }
 
     // Highlight a specific chunk
     function highlightChunk(chunkId) {
-        // Remove highlight from all chunks
+        if (!chunkId) return;
+        debug(`Highlighting chunk: ${chunkId}`);
         document.querySelectorAll('.chunk-item.active-chunk').forEach(chunk => {
             chunk.classList.remove('active-chunk');
         });
-
-        // Add highlight to the selected chunk
         const targetChunk = document.querySelector(`.chunk-item[data-chunk-id="${chunkId}"]`);
         if (targetChunk) {
             targetChunk.classList.add('active-chunk');
+            debug(`Chunk ${chunkId} highlighted.`);
+        } else {
+            debug(`Chunk ${chunkId} not found for highlighting.`);
         }
     }
 
     // Switch to the chunks tab
     function switchToChunksTab() {
         const chunksTabElement = document.getElementById('referenced-chunks-tab');
-        if (chunksTabElement && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+        if (chunksTabElement && isBootstrapAvailable() && bootstrap.Tab) {
+            debug("Switching to referenced chunks tab.");
+            try {
             const tabInstance = bootstrap.Tab.getOrCreateInstance(chunksTabElement);
             tabInstance.show();
+            } catch(e) {
+                 debug("Error switching tab with Bootstrap: " + e.message);
+            }
+        } else if (!chunksTabElement) {
+             debug("Referenced chunks tab element not found.");
+        } else if (!isBootstrapAvailable()) {
+             debug("Cannot switch tab: Bootstrap not available.");
         }
     }
 
     // Scroll to a specific chunk
     function scrollToChunk(chunkId) {
+         if (!chunkId) return;
         const targetChunk = document.querySelector(`.chunk-item[data-chunk-id="${chunkId}"]`);
         if (targetChunk) {
-            // Check visibility before scrolling
+             debug(`Scrolling to chunk: ${chunkId}`);
+             // Check if already visible to avoid unnecessary scrolling
             const rect = targetChunk.getBoundingClientRect();
             const isVisible = (
                 rect.top >= 0 &&
-                rect.left >= 0 &&
-                rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-                rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+                 rect.bottom <= (window.innerHeight || document.documentElement.clientHeight)
             );
             
-            // Only scroll if not already fully visible
             if (!isVisible) {
                  targetChunk.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  debug(`Scrolled chunk ${chunkId} into view.`);
+             } else {
+                  debug(`Chunk ${chunkId} already visible.`);
             }
+         } else {
+             debug(`Chunk ${chunkId} not found for scrolling.`);
         }
     }
 
@@ -983,16 +1233,19 @@
         if (!chunkFilter) return;
         const filterValue = chunkFilter.value.toLowerCase().trim();
         let visibleCount = 0;
+        debug(`Filtering chunks with value: "${filterValue}"`);
 
         document.querySelectorAll('#chunks-container .chunk-item').forEach(chunk => {
             const chunkContent = chunk.querySelector('.chunk-content')?.textContent.toLowerCase() || '';
             const chunkTitle = chunk.querySelector('.card-subtitle')?.textContent.toLowerCase() || '';
-            const chunkDomain = chunk.querySelector('.text-muted')?.textContent.toLowerCase() || '';
+            // Improve domain extraction robustness
+            const domainBadge = chunk.querySelector('.badge.bg-secondary');
+            const chunkDomain = domainBadge ? domainBadge.textContent.toLowerCase() : '';
             const keyTerms = Array.from(chunk.querySelectorAll('.chunk-keyword')).map(k => k.textContent.toLowerCase());
 
             const isMatch = chunkContent.includes(filterValue) || 
                             chunkTitle.includes(filterValue) ||
-                            chunkDomain.includes(filterValue) ||
+                            (chunkDomain && chunkDomain.includes(filterValue)) ||
                             keyTerms.some(term => term.includes(filterValue));
 
             if (isMatch) {
@@ -1003,200 +1256,399 @@
             }
         });
         
-        // Add feedback if no chunks match
-        const noResultsFeedback = document.getElementById('no-filter-results');
-        if (noResultsFeedback) {
-            noResultsFeedback.style.display = (visibleCount === 0 && filterValue !== '') ? 'block' : 'none';
-        } else if (visibleCount === 0 && filterValue !== '') {
-             // Dynamically create feedback if needed
+        debug(`Filtering complete, ${visibleCount} chunks visible.`);
+        
+        // Add/remove 'no results' feedback
              const container = document.getElementById('chunks-container');
-             if (container && !document.getElementById('no-filter-results')) {
-                 const feedbackDiv = document.createElement('div');
-                 feedbackDiv.id = 'no-filter-results';
-                 feedbackDiv.className = 'alert alert-warning mt-3';
-                 feedbackDiv.textContent = 'No chunks match your filter.';
-                 container.appendChild(feedbackDiv);
+        let noResultsFeedback = document.getElementById('no-filter-results');
+        if (visibleCount === 0 && filterValue !== '') {
+             if (!noResultsFeedback && container) {
+                 noResultsFeedback = document.createElement('div');
+                 noResultsFeedback.id = 'no-filter-results';
+                 noResultsFeedback.className = 'alert alert-warning mt-3';
+                 noResultsFeedback.textContent = 'No chunks match your filter.';
+                 container.appendChild(noResultsFeedback);
+                 debug("Added 'no filter results' message.");
+             } else if (noResultsFeedback) {
+                  noResultsFeedback.style.display = 'block';
              }
+        } else if (noResultsFeedback) {
+            noResultsFeedback.style.display = 'none';
+             debug("Hid 'no filter results' message.");
         }
     }
 
-    // Sort chunks based on selected option
+    // Improved sorting function
     function sortChunks() {
+        debug("sortChunks called");
+        
         const chunkSort = document.getElementById('chunk-sort');
         const container = document.getElementById('chunks-container');
-        if (!chunkSort || !container) return;
+        
+        if (!chunkSort) { debug("Chunk sort element not found"); return; }
+        if (!container) { debug("Chunks container not found"); return; }
 
         const sortValue = chunkSort.value;
-        // Get chunks *currently* within the container (respecting filters)
-        const chunks = Array.from(container.querySelectorAll('.chunk-item')); 
+        debug(`Sort value: ${sortValue}`);
+        
+        // Get all chunk items, even hidden ones, to maintain consistent sorting logic
+        const chunks = Array.from(container.querySelectorAll('.chunk-item'));
+        debug(`Found ${chunks.length} total chunks to sort`);
+        
+        if (chunks.length === 0) { debug("No chunks found to sort"); return; }
 
         chunks.sort((a, b) => {
-            const aId = a.dataset.chunkId;
-            const bId = b.dataset.chunkId;
+            const aId = a.dataset.chunkId || '';
+            const bId = b.dataset.chunkId || '';
 
+            try {
             if (sortValue === 'source') {
-                // Sort by source domain, then title, then chunk index
                 const aDomain = a.querySelector('.badge.bg-secondary')?.textContent || '';
                 const bDomain = b.querySelector('.badge.bg-secondary')?.textContent || '';
                 const aTitle = a.querySelector('.card-subtitle a')?.textContent || '';
                 const bTitle = b.querySelector('.card-subtitle a')?.textContent || '';
                 
-                if (aDomain.localeCompare(bDomain) !== 0) return aDomain.localeCompare(bDomain);
-                if (aTitle.localeCompare(bTitle) !== 0) return aTitle.localeCompare(bTitle);
+                    const domainComp = aDomain.localeCompare(bDomain);
+                    if (domainComp !== 0) return domainComp;
+                    
+                    const titleComp = aTitle.localeCompare(bTitle);
+                    if (titleComp !== 0) return titleComp;
                 
                 const aIndex = parseInt(aId.split('_').pop() || '0', 10);
                 const bIndex = parseInt(bId.split('_').pop() || '0', 10);
                 return aIndex - bIndex;
                 
             } else if (sortValue === 'relevance') {
-                // Sort by relevance score (desc)
-                const aScore = parseFloat(a.dataset.relevance || '0');
-                const bScore = parseFloat(b.dataset.relevance || '0');
-                
-                if (bScore !== aScore) {
-                    return bScore - aScore;
-                } else {
-                    // Fallback to reference order if relevance score is equal
+                    let aScore = 0, bScore = 0;
+                    
+                    // Prefer data attribute if available
+                    if (a.hasAttribute('data-relevance')) aScore = parseFloat(a.getAttribute('data-relevance')) || 0;
+                    if (b.hasAttribute('data-relevance')) bScore = parseFloat(b.getAttribute('data-relevance')) || 0;
+                    
+                    // Fallback to badge text if data attribute missing or invalid
+                    if (aScore === 0) {
+                         const aBadge = a.querySelector('.badge:not(.bg-primary):not(.bg-secondary)');
+                         if (aBadge) {
+                             const match = aBadge.textContent.match(/(\d+)%/);
+                             if (match && match[1]) aScore = parseInt(match[1], 10) / 100;
+                         }
+                    }
+                     if (bScore === 0) {
+                         const bBadge = b.querySelector('.badge:not(.bg-primary):not(.bg-secondary)');
+                          if (bBadge) {
+                             const match = bBadge.textContent.match(/(\d+)%/);
+                             if (match && match[1]) bScore = parseInt(match[1], 10) / 100;
+                         }
+                    }
+                    
+                    debug(`Relevance scores - A: ${aScore}, B: ${bScore}`);
+                    
+                    if (bScore !== aScore) return bScore - aScore; // Higher score first
+                    
+                    // Fall back to ID for ties
                     const aIndex = parseInt(aId.split('_').pop() || '0', 10);
                     const bIndex = parseInt(bId.split('_').pop() || '0', 10);
                     return aIndex - bIndex;
-                }
+                    
             } else { // 'reference-order' or default
-                // Sort by the numeric part of the chunk ID
                 const aIndex = parseInt(aId.split('_').pop() || '0', 10);
                 const bIndex = parseInt(bId.split('_').pop() || '0', 10);
                 return aIndex - bIndex;
             }
-        });
-
-        // Reattach sorted chunks to container
-        chunks.forEach(chunk => container.removeChild(chunk));
-        chunks.forEach(chunk => container.appendChild(chunk));
-        
-        // Re-apply filter visibility after sorting
-        filterChunks();
-    }
-
-    // Toggle citation highlights in summary
-    function toggleCitationHighlights() {
-        const citations = document.querySelectorAll('.citation-highlight');
-        const toggleButton = document.getElementById('toggle-highlight');
-        let isActive = false;
-         
-        citations.forEach(citation => {
-            citation.classList.toggle('highlight-active');
-            if (citation.classList.contains('highlight-active')) {
-                isActive = true;
+            } catch (error) {
+                debug(`Error during sort comparison between ${aId} and ${bId}: ${error.message}`);
+                return 0; // Maintain original relative order on error
             }
         });
+        
+        debug("Sort comparison complete, reattaching chunks");
+        
+        // Reattach chunks in sorted order. No need to detach first, appendChild moves existing elements.
+        chunks.forEach(chunk => container.appendChild(chunk));
+        
+        debug("Sort complete, re-applying filter");
+        filterChunks(); // Re-apply filter to hide/show based on current filter value
+    }
 
-        // Update button state/appearance
+    // Update the citation highlights function to be more robust
+    function toggleCitationHighlights() {
+        debug("toggleCitationHighlights called");
+        const citations = document.querySelectorAll('.citation-highlight');
+        debug(`Found ${citations.length} citation highlights`);
+        if (citations.length === 0) return;
+        
+        let anyActive = false;
+        citations.forEach(citation => {
+            // Check the class *before* toggling
+            if (citation.classList.contains('highlight-active')) {
+                anyActive = true;
+            }
+        });
+        debug(`Any citations active before toggle: ${anyActive}`);
+         
+        citations.forEach(citation => {
+            // If any were active, remove from all. Otherwise, add to all.
+            if (anyActive) {
+                citation.classList.remove('highlight-active');
+            } else {
+                citation.classList.add('highlight-active');
+            }
+        });
+        
+        // Update button state based on the state *after* toggling
+        const toggleButton = document.getElementById('toggle-highlight');
         if (toggleButton) {
-            if (isActive) {
+            if (!anyActive) { // If none were active before, they are active now
                 toggleButton.classList.add('active');
                 toggleButton.setAttribute('aria-pressed', 'true');
                 toggleButton.title = "Disable citation highlights";
-            } else {
+                debug("Highlights enabled.");
+            } else { // If some were active before, they are inactive now
                 toggleButton.classList.remove('active');
                 toggleButton.setAttribute('aria-pressed', 'false');
                 toggleButton.title = "Enable citation highlights";
+                debug("Highlights disabled.");
             }
         }
+        debug("Toggle citation highlights complete");
     }
     
-    // Toggle expanding all chunks
+    // Update the toggle functionality to be more robust
     function toggleExpandAllChunks() {
-        const expandButton = document.getElementById('expand-all-chunks');
+        debug("toggleExpandAllChunks called");
         const chunkContents = document.querySelectorAll('.chunk-content');
-        const expandButtons = document.querySelectorAll('.expand-chunk');
-        
-        let allExpanded = true;
-        
-        // Check if all chunks are already expanded
+        debug(`Found ${chunkContents.length} chunk contents`);
+        if (chunkContents.length === 0) return;
+
+        // Determine target state: if *any* are collapsed, the goal is to expand all.
+        let shouldExpand = false;
         chunkContents.forEach(content => {
-            if (content.classList.contains('collapsed')) {
-                allExpanded = false;
+            if (content.offsetParent !== null && content.classList.contains('collapsed')) { // Only check visible chunks
+                shouldExpand = true;
             }
         });
-        
-        // Toggle all chunks
-        chunkContents.forEach(content => {
-            if (allExpanded) {
-                content.classList.remove('expanded');
-                content.classList.add('collapsed');
-            } else {
+        debug(`Should expand all: ${shouldExpand}`);
+
+        // Apply target state to all *visible* chunks
+        document.querySelectorAll('#chunks-container .chunk-item').forEach(item => {
+            // Check if the item itself is visible (due to filtering)
+             if (item.offsetParent !== null) {
+                 const content = item.querySelector('.chunk-content');
+                 const button = item.querySelector('.expand-chunk');
+                 if(content) {
+                    if (shouldExpand) {
                 content.classList.remove('collapsed');
                 content.classList.add('expanded');
-            }
-        });
-        
-        // Update expand/collapse buttons
-        expandButtons.forEach(button => {
-            if (allExpanded) {
-                button.innerHTML = '<i class="bi bi-arrows-expand"></i> Show More';
+                        if(button) button.innerHTML = '<i class="bi bi-arrows-collapse"></i> Show Less';
             } else {
-                button.innerHTML = '<i class="bi bi-arrows-collapse"></i> Show Less';
-            }
+                        content.classList.remove('expanded');
+                        content.classList.add('collapsed');
+                         if(button) button.innerHTML = '<i class="bi bi-arrows-expand"></i> Show More';
+                    }
+                 }
+             }
         });
-        
-        // Update main button
-        if (expandButton) {
-            if (allExpanded) {
-                expandButton.innerHTML = '<i class="bi bi-arrows-expand"></i> Expand All';
-                expandButton.title = "Expand all chunks";
+
+        // Update main button text/title
+        const expandAllButton = document.getElementById('expand-all-chunks');
+        if (expandAllButton) {
+            if (shouldExpand) {
+                expandAllButton.innerHTML = '<i class="bi bi-arrows-collapse"></i> Collapse All';
+                expandAllButton.title = "Collapse all visible chunks";
             } else {
-                expandButton.innerHTML = '<i class="bi bi-arrows-collapse"></i> Collapse All';
-                expandButton.title = "Collapse all chunks";
+                expandAllButton.innerHTML = '<i class="bi bi-arrows-expand"></i> Expand All';
+                expandAllButton.title = "Expand all visible chunks";
             }
         }
+        debug("Toggle expand all complete");
     }
     
-    // Get full source content for context view
+    // More robust full source content retrieval
     function getFullSourceContent(sourceUrl) {
-        // Get the source content from the full sources tab
+        debug(`getFullSourceContent called for ${sourceUrl}`);
         const sourceElements = document.querySelectorAll('#full-sources .list-group-item-action');
+        debug(`Found ${sourceElements.length} source elements in #full-sources`);
+        if (sourceElements.length === 0) return "Full source content not available (no elements).";
+
+        // Try exact URL match first
         for (const element of sourceElements) {
             if (element.href === sourceUrl) {
-                return element.querySelector('.source-snippet').textContent;
+                const snippetElement = element.querySelector('.source-snippet');
+                if (snippetElement) {
+                    debug(`Found exact URL match for ${sourceUrl}`);
+                    return snippetElement.textContent.trim();
+                }
             }
         }
-        return "Full source content not available.";
+        debug(`Exact URL match failed for ${sourceUrl}`);
+
+        // Fallback: Try matching by domain and title from the chunk card itself
+        // This requires finding the corresponding chunk card for the sourceUrl
+        const chunkCard = document.querySelector(`.chunk-item a[href="${sourceUrl}"]`)?.closest('.chunk-item');
+        if (chunkCard) {
+            const chunkTitle = chunkCard.querySelector('.card-subtitle a')?.textContent || '';
+             debug(`Trying fallback match for title: "${chunkTitle}"`);
+        for (const element of sourceElements) {
+                 const sourceTitleElem = element.querySelector('h5.mb-1');
+                 if (sourceTitleElem && sourceTitleElem.textContent === chunkTitle) {
+                const snippetElement = element.querySelector('.source-snippet');
+                if (snippetElement) {
+                         debug(`Found fallback match by title for ${sourceUrl}`);
+                         return snippetElement.textContent.trim();
+                }
+            }
+             }
+        } else {
+             debug("Could not find corresponding chunk card for fallback match.");
+        }
+        
+        debug("Could not find matching source content.");
+        return "Full source content could not be retrieved.";
     }
     
-    // Show source context modal
+    // More robust implementation of the showSourceContext function
     function showSourceContext(sourceTitle, sourceContent, chunkContent, sourceUrl) {
+        debug(`showSourceContext called for "${sourceTitle}"`);
         const modal = document.getElementById('source-context-modal');
-        if (!modal) return;
+        if (!modal) { debug("Error: Modal element not found"); return; }
         
-        // Get modal elements
         const titleElement = modal.querySelector('.source-title');
         const contentElement = modal.querySelector('.source-content');
         const visitButton = document.getElementById('visit-source-btn');
         
-        // Set content
-        titleElement.innerHTML = `<h4>${sourceTitle}</h4>`;
-        
-        // Try to highlight the chunk within the full content
-        if (sourceContent.includes(chunkContent)) {
-            const parts = sourceContent.split(chunkContent);
-            contentElement.innerHTML = parts[0] + 
-                '<mark class="bg-light border border-primary p-1">' + chunkContent + '</mark>' + 
-                parts.slice(1).join(chunkContent);
+        if (!titleElement || !contentElement) { debug("Error: Modal content elements not found"); return; }
+
+        titleElement.innerHTML = `<h4>${sourceTitle || 'Source Context'}</h4>`;
+
+        // Clean chunk content carefully - remove trailing buttons/fades if possible
+        let cleanChunkContent = chunkContent.trim();
+        // Look for common patterns added by UI like "Show More" / "Show Less"
+        cleanChunkContent = cleanChunkContent.replace(/(\s*<div class="chunk-fade"><\/div>\s*|\s*(Show More|Show Less)\s*)$/i, '').trim();
+
+        let modalContentHTML = '';
+        // Escape HTML for safe insertion, replace newlines with <br>
+        const escapeHTML = (str) => str.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, '<br>');
+
+        if (sourceContent && sourceContent.includes(cleanChunkContent) && cleanChunkContent) {
+             debug("Highlighting chunk within source content.");
+            const parts = sourceContent.split(cleanChunkContent);
+             modalContentHTML = escapeHTML(parts[0]) + 
+                 '<mark class="bg-light border border-primary p-1">' + escapeHTML(cleanChunkContent) + '</mark>' + 
+                 escapeHTML(parts.slice(1).join(cleanChunkContent));
         } else {
-            // If exact match not found, just show both
-            contentElement.innerHTML = '<div class="mb-3"><strong>Source Content:</strong><div class="border-bottom pb-2 mb-2">' + 
-                sourceContent + '</div><strong>Referenced Chunk:</strong><div class="bg-light p-2">' + 
-                chunkContent + '</div></div>';
+             debug("Chunk not found in source snippet or content missing, showing separately.");
+             modalContentHTML = `
+                 <div class="mb-3">
+                     <strong>Source Content Snippet:</strong>
+                     <div class="border-bottom pb-2 mb-2">${sourceContent ? escapeHTML(sourceContent) : '<i>Not available</i>'}</div>
+                     <strong>Referenced Chunk:</strong>
+                     <div class="bg-light p-2">${chunkContent ? escapeHTML(cleanChunkContent) : '<i>Not available</i>'}</div>
+                 </div>
+             `;
         }
-        
-        // Set visit button URL
+        contentElement.innerHTML = modalContentHTML;
+
         if (visitButton) {
-            visitButton.href = sourceUrl;
+            visitButton.href = sourceUrl || '#';
+        } else {
+             debug("Visit source button not found.")
         }
         
         // Show the modal
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
+        if (isBootstrapAvailable()) {
+            debug("Showing modal with Bootstrap");
+        try {
+                // Ensure only one instance is created
+            const bsModal = bootstrap.Modal.getOrCreateInstance(modal);
+            bsModal.show();
+        } catch (error) {
+                debug(`Error showing modal with Bootstrap: ${error.message}. Using fallback.`);
+                showModalFallback(modal);
+            }
+        } else {
+            debug("Bootstrap not available, using fallback");
+            showModalFallback(modal);
+        }
     }
+
+    // Fallback method to show modal without Bootstrap
+    function showModalFallback(modal) {
+        debug("Using fallback modal display");
+        let backdrop = document.querySelector('.modal-backdrop-fallback');
+        if (!backdrop) {
+            backdrop = document.createElement('div');
+            backdrop.className = 'modal-backdrop modal-backdrop-fallback fade show';
+            // Basic backdrop style if CSS isn't loaded
+            backdrop.style.cssText = 'position: fixed; top: 0; left: 0; z-index: 1050; width: 100vw; height: 100vh; background-color: #000; opacity: .5;';
+            document.body.appendChild(backdrop);
+             // Ensure backdrop is removed when modal closes
+             modal.addEventListener('hidden.bs.modal.fallback', () => {
+                 if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+             }, { once: true });
+        }
+
+            modal.style.display = 'block';
+        modal.classList.add('show');
+        // Basic modal positioning if CSS isn't loaded
+        modal.style.zIndex = '1055'; 
+        modal.style.position = 'fixed';
+        modal.style.top = '10%';
+        modal.style.left = '50%';
+        modal.style.transform = 'translateX(-50%)';
+
+            document.body.classList.add('modal-open');
+        document.body.style.overflow = 'hidden'; // Prevent background scroll
+
+        // Add close handlers for fallback
+        const closeHandler = () => {
+            modal.style.display = 'none';
+            modal.classList.remove('show');
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = ''; 
+            if (backdrop.parentNode) {
+                backdrop.parentNode.removeChild(backdrop);
+            }
+             // Dispatch a custom event mimics hidden.bs.modal for cleanup
+            modal.dispatchEvent(new CustomEvent('hidden.bs.modal.fallback')); 
+            // Remove listeners after close
+            modal.querySelectorAll('[data-bs-dismiss="modal"], .btn-close, .btn-secondary').forEach(button => {
+                 button.removeEventListener('click', closeHandler);
+            });
+        };
+        
+        modal.querySelectorAll('[data-bs-dismiss="modal"], .btn-close, .btn-secondary').forEach(button => {
+            button.removeEventListener('click', closeHandler); // Remove previous if any
+            button.addEventListener('click', closeHandler);
+        });
+    }
+
+    // Add a debug panel to the page for troubleshooting
+    function addDebugPanel() {
+        if (document.getElementById('debug-panel')) return;
+        debug("Initializing debug panel...");
+        const panel = document.createElement('div');
+        panel.id = 'debug-panel';
+        panel.style.cssText = 'position: fixed; bottom: 10px; right: 10px; width: clamp(300px, 30vw, 500px); height: 200px; background: rgba(0,0,0,0.85); color: #00ff41; font-family: monospace; padding: 10px; overflow-y: auto; z-index: 9999; font-size: 12px; border: 1px solid #00ff41; border-radius: 4px; box-shadow: 0 0 10px rgba(0,255,0,0.5);';
+        
+        const heading = document.createElement('div');
+        heading.textContent = 'Debug Panel';
+        heading.style.cssText = 'font-weight: bold; border-bottom: 1px solid #00cc33; margin-bottom: 5px; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center;';
+        
+        const clearButton = document.createElement('button');
+        clearButton.textContent = 'Clear';
+        clearButton.style.cssText = 'background: #333; color: #00ff41; border: 1px solid #00ff41; font-size: 10px; padding: 2px 5px; cursor: pointer;';
+        clearButton.onclick = () => {
+             // Keep heading, clear content
+             while(panel.childNodes.length > 1) {
+                 panel.removeChild(panel.lastChild);
+             }
+             debug("Debug panel cleared."); // Log the clear action itself
+        };
+        heading.appendChild(clearButton);
+        
+        panel.appendChild(heading);
+        document.body.appendChild(panel);
+    }
+
 </script>
 {% endblock %}
