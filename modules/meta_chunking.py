@@ -11,6 +11,9 @@ import logging
 from typing import Dict, List, Optional, Set, Any, Tuple
 import nltk
 from quart import current_app
+from collections import Counter, defaultdict
+import re
+import math
 
 from modules.utils.errors import ProcessorError, handle_async_exceptions
 from modules.utils.logging import get_logger, log_async_function_call
@@ -31,7 +34,8 @@ class MetaChunker:
         threshold: float = 0.0,
         target_chunk_size: int = 4000,
         use_dynamic_combination: bool = True,
-        cache_size: int = 1000
+        cache_size: int = 1000,
+        ngram_order: int = 2
     ):
         """
         Initialize the MetaChunker.
@@ -41,12 +45,14 @@ class MetaChunker:
             target_chunk_size: Target size in characters for final chunks
             use_dynamic_combination: Whether to use dynamic combination for chunk size control
             cache_size: Maximum size of the KV cache for perplexity calculation
+            ngram_order: Maximum n-gram order to use (2 for bigrams, 3 for trigrams)
         """
         self.threshold = threshold
         self.target_chunk_size = target_chunk_size
         self.use_dynamic_combination = use_dynamic_combination
         self.cache_size = cache_size
         self.ppl_cache = {}
+        self.ngram_order = min(3, max(1, ngram_order))  # Limit between 1-3 for performance
         
     async def chunk_text(self, text: str) -> List[str]:
         """
@@ -94,7 +100,7 @@ class MetaChunker:
         if current_app.config.get('USE_OPENAI_FOR_PPL', False):
             return await self._calculate_ppl_with_openai(sentences)
         
-        # Method 2: Using local approximation (faster, lower cost)
+        # Method 2: Using enhanced local approximation (faster, lower cost)
         return await self._calculate_ppl_local(sentences)
     
     async def _calculate_ppl_with_openai(self, sentences: List[str]) -> List[float]:
@@ -146,63 +152,217 @@ class MetaChunker:
     
     async def _calculate_ppl_local(self, sentences: List[str]) -> List[float]:
         """
-        Calculate a local approximation of perplexity without external API calls.
+        Calculate an enhanced local approximation of perplexity without external API calls.
         
-        This method uses statistical properties of the text to approximate
-        perplexity without requiring an LLM API.
+        This method uses n-gram models and statistical properties of the text to
+        approximate perplexity without requiring an LLM API.
+        
+        Args:
+            sentences: List of sentences to analyze
+            
+        Returns:
+            List of perplexity scores for each sentence
         """
-        import re
-        from collections import Counter
+        # Ensure we have sentences
+        if not sentences:
+            return []
+        if len(sentences) == 1:
+            return [1.0]  # Single sentence gets neutral score
         
-        # Initialize scores
+        # Preprocess all sentences for better tokenization
+        processed_sentences = []
+        for sentence in sentences:
+            # Clean and normalize
+            clean_text = sentence.lower()
+            # Remove special characters but keep dots and commas which can be relevant
+            clean_text = re.sub(r'[^\w\s.,?!]', '', clean_text)
+            # Normalize whitespace
+            clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+            processed_sentences.append(clean_text)
+        
+        # Generate n-grams for all sentences
+        ngrams_by_sentence = []
+        for sentence in processed_sentences:
+            words = self._tokenize_sentence(sentence)
+            sentence_ngrams = []
+            
+            # Generate n-grams of different orders up to self.ngram_order
+            for n in range(1, self.ngram_order + 1):
+                if len(words) < n:
+                    continue
+                
+                for i in range(len(words) - n + 1):
+                    ngram = tuple(words[i:i+n])
+                    sentence_ngrams.append(ngram)
+            
+            ngrams_by_sentence.append(sentence_ngrams)
+        
+        # Build n-gram model from the full text
+        all_ngrams = [ngram for sentence_ngrams in ngrams_by_sentence for ngram in sentence_ngrams]
+        ngram_counts = Counter(all_ngrams)
+        total_ngrams = len(all_ngrams)
+        
+        # Calculate n-gram probabilities with Laplace smoothing
+        vocabulary_size = len(set(ngram for ngram in all_ngrams if len(ngram) == 1))
+        ngram_probs = {}
+        
+        for ngram, count in ngram_counts.items():
+            if len(ngram) == 1:  # Unigram
+                ngram_probs[ngram] = (count + 1) / (total_ngrams + vocabulary_size)
+            else:  # Higher-order n-gram
+                prefix = ngram[:-1]
+                prefix_count = sum(1 for n in all_ngrams if n[:len(prefix)] == prefix)
+                # Apply Laplace smoothing
+                ngram_probs[ngram] = (count + 1) / (prefix_count + vocabulary_size)
+        
+        # Calculate perplexity scores using a sliding context window
         ppl_scores = []
+        context_ngrams = Counter()  # Start with empty context
         
-        # Create a simple N-gram model from the full text
-        full_text = " ".join(sentences)
-        words = re.findall(r'\w+', full_text.lower())
-        
-        # Count word frequencies
-        word_counts = Counter(words)
-        total_words = len(words)
-        
-        # Calculate a basic probability distribution
-        word_probs = {word: count/total_words for word, count in word_counts.items()}
-        
-        # For each sentence, calculate approximate perplexity
-        for i, sentence in enumerate(sentences):
-            # Skip first sentence as it has no context
+        for i, sentence_ngrams in enumerate(ngrams_by_sentence):
             if i == 0:
+                # First sentence has no previous context
                 ppl_scores.append(1.0)
+                # Add it to context for next sentence
+                context_ngrams.update(sentence_ngrams)
                 continue
-                
-            # Get words in this sentence
-            sent_words = re.findall(r'\w+', sentence.lower())
             
-            if not sent_words:
-                ppl_scores.append(1.0)
+            # Calculate perplexity based on previous context
+            if not sentence_ngrams:
+                ppl_scores.append(1.0)  # Default score for empty sentence
                 continue
+            
+            # Calculate sentence probability using n-gram model
+            log_probability = 0.0
+            sentence_length = 0
+            
+            for ngram in sentence_ngrams:
+                sentence_length += 1
                 
-            # Calculate how unexpected this sentence is given previous context
-            context_until_now = " ".join(sentences[:i])
-            context_words = re.findall(r'\w+', context_until_now.lower())
-            context_counts = Counter(context_words)
+                # Calculate probability of this n-gram given context
+                if ngram in context_ngrams:
+                    # This n-gram exists in context, use context probability
+                    probability = (context_ngrams[ngram] + 1) / (sum(context_ngrams.values()) + vocabulary_size)
+                else:
+                    # N-gram doesn't exist in context, use global probability with higher smoothing
+                    probability = 1 / (sum(context_ngrams.values()) + vocabulary_size * 2)
+                
+                # Add log probability (avoid log(0))
+                log_probability += math.log(max(probability, 1e-10))
             
-            # Check how many words in this sentence are in the context
-            context_word_count = sum(1 for word in sent_words if word in context_counts)
-            context_ratio = context_word_count / len(sent_words)
+            # Calculate perplexity: 2^(-log_prob/length)
+            if sentence_length > 0:
+                # Normalize by sentence length
+                norm_log_prob = log_probability / sentence_length
+                perplexity = 2 ** (-norm_log_prob)
+            else:
+                perplexity = 1.0  # Default for empty sentence
             
-            # Sentences with less contextual words have higher perplexity
-            perplexity = 1.0 / (context_ratio + 0.1)  # Add small constant to avoid division by zero
             ppl_scores.append(perplexity)
+            
+            # Update context with current sentence n-grams
+            context_ngrams.update(sentence_ngrams)
+            
+            # Limit context size for efficiency with long texts
+            if len(context_ngrams) > self.cache_size * 10:
+                # Keep most frequent n-grams
+                context_ngrams = Counter(dict(context_ngrams.most_common(self.cache_size)))
         
-        # Normalize scores
-        if ppl_scores:
+        # Normalize scores for better comparison and visualization
+        if len(ppl_scores) > 1:
             min_score = min(ppl_scores)
             max_score = max(ppl_scores)
             if min_score != max_score:
                 ppl_scores = [(score - min_score) / (max_score - min_score) * 5 + 1 for score in ppl_scores]
         
+        # Enhance with additional cues from the text
+        ppl_scores = self._enhance_with_discourse_cues(sentences, ppl_scores)
+        
         return ppl_scores
+    
+    def _tokenize_sentence(self, sentence: str) -> List[str]:
+        """
+        Tokenize a sentence into words.
+        
+        Args:
+            sentence: The sentence to tokenize
+            
+        Returns:
+            List of words
+        """
+        # Simple tokenization by splitting on whitespace
+        words = sentence.split()
+        
+        # Filter out very short tokens and convert to lowercase
+        words = [word.lower() for word in words if len(word) > 1]
+        
+        return words
+    
+    def _enhance_with_discourse_cues(self, sentences: List[str], scores: List[float]) -> List[float]:
+        """
+        Enhance perplexity scores with discourse cues.
+        
+        This looks for discourse markers, topic shifts, and other linguistic features
+        that can indicate logical boundaries.
+        
+        Args:
+            sentences: List of original sentences
+            scores: Initial perplexity scores
+            
+        Returns:
+            Enhanced perplexity scores
+        """
+        # If we have less than 3 sentences, no need to enhance
+        if len(sentences) < 3:
+            return scores
+        
+        enhanced_scores = scores.copy()
+        
+        # Discourse markers that often indicate topic shifts
+        topic_shift_markers = [
+            r'\b(however|nevertheless|conversely|in contrast|on the other hand)\b',
+            r'\b(furthermore|moreover|in addition|additionally)\b',
+            r'\b(first|firstly|second|secondly|third|finally|lastly)\b',
+            r'\b(for example|for instance|specifically|in particular)\b',
+            r'\b(in conclusion|to summarize|in summary|to conclude)\b'
+        ]
+        
+        # Check each sentence for discourse markers
+        for i in range(1, len(sentences)):
+            sentence = sentences[i].lower()
+            
+            # Check for discourse markers that suggest boundaries
+            for marker_pattern in topic_shift_markers:
+                if re.search(marker_pattern, sentence, re.IGNORECASE):
+                    # Increase the score to make this more likely to be a boundary
+                    enhanced_scores[i] *= 1.2
+                    break
+            
+            # Check for quotes or reported speech which often indicate boundaries
+            if (sentence.startswith('"') or sentence.startswith("'") or 
+                sentence.startswith('"') or re.search(r'\bsaid\b|\bstated\b', sentence)):
+                enhanced_scores[i] *= 1.15
+            
+            # Check for sentence starters that suggest a new thought
+            if re.match(r'^(the|a|an|this|these|those|one|it)\b', sentence):
+                enhanced_scores[i] *= 0.9  # Less likely to be a boundary
+                
+            # Check for connective words suggesting continuation
+            if re.match(r'^(and|but|or|so|because|since)\b', sentence):
+                enhanced_scores[i] *= 0.8  # Less likely to be a boundary
+        
+        # Look for sentence length shifts which can indicate structure changes
+        sentence_lengths = [len(sentence.split()) for sentence in sentences]
+        for i in range(1, len(sentences) - 1):
+            prev_length = sentence_lengths[i-1]
+            curr_length = sentence_lengths[i]
+            next_length = sentence_lengths[i+1]
+            
+            # If this sentence is significantly different in length from neighbors
+            if (abs(curr_length - prev_length) > 10 and abs(curr_length - next_length) > 10):
+                enhanced_scores[i] *= 1.1  # Slightly increase boundary probability
+        
+        return enhanced_scores
     
     def _find_chunk_boundaries(self, ppl_scores: List[float]) -> List[int]:
         """
