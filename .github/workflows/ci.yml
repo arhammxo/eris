@@ -1,0 +1,59 @@
+name: CI
+
+# No secrets are used or required. The test suite and the eval harness are
+# fully offline: search, page fetching and the model are all replaced with
+# fakes, so CI needs neither an API key nor network egress.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint & test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[all,dev]'
+
+      - name: Lint (ruff check)
+        run: ruff check --output-format=github .
+
+      - name: Check formatting (ruff format)
+        run: ruff format --check .
+
+      - name: Byte-compile every module
+        run: python -m compileall -q src tests
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Run the offline eval harness
+        # --strict fails the build if retrieval hit-rate or citation validity
+        # regresses below 100% on the shipped fixtures.
+        run: python -m eris eval examples/qa.jsonl --strict
