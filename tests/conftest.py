@@ -7,8 +7,12 @@ import pytest
 import asyncio
 from typing import Dict, Any, Generator, AsyncGenerator
 import logging
-from quart.testing import TestClient
 from quart import Quart
+
+try:  # Quart >= 0.19 renamed TestClient to QuartClient
+    from quart.testing import QuartClient as TestClient
+except ImportError:  # pragma: no cover - older Quart releases
+    from quart.testing import TestClient
 
 # Add the project root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
