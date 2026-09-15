@@ -1,6 +1,6 @@
-# Meta-Chunking for Web Summarizer
+# Meta-Chunking in Eris
 
-This document outlines the implementation of Meta-Chunking in the Web Summarizer application, including usage instructions, benefits, and testing procedures.
+This document outlines the implementation of Meta-Chunking in Eris, including usage instructions, benefits, and testing procedures.
 
 ## What is Meta-Chunking?
 
@@ -32,7 +32,8 @@ Our implementation uses Perplexity (PPL) Chunking, which:
 Our implementation includes several performance-focused features:
 
 - **Local Perplexity Calculation**: Uses statistical approximation instead of API calls
-- **KV Caching**: Optimizes memory usage for long texts
+- **Bounded Context Window**: The running n-gram context is capped (`cache_size`) and pruned to
+  its most frequent entries, so memory stays flat on long documents
 - **Dynamic Combination**: Balances chunk size with logical coherence
 - **Configurable Thresholds**: Allows fine-tuning for different content types
 
@@ -41,12 +42,14 @@ Our implementation includes several performance-focused features:
 In `config.py`, you can adjust the following settings:
 
 ```python
-# Meta-Chunking settings
+# Meta-Chunking settings (each reads the same-named environment variable)
 USE_META_CHUNKING = True                  # Enable/disable Meta-Chunking
 META_CHUNKING_THRESHOLD = 0.5             # Perplexity threshold for chunk boundaries
 USE_DYNAMIC_COMBINATION = True            # Enable/disable dynamic chunk size management
 USE_OPENAI_FOR_PPL = False                # Use OpenAI API for perplexity calculation
 ```
+
+Set them in `.env` rather than editing `config.py`; see `.env.example`.
 
 ## Running the Demo
 
@@ -86,7 +89,7 @@ These tests verify that Meta-Chunking works correctly when integrated with the r
 
 ```bash
 # Run the benchmarking script with sample files
-python tools/benchmark_chunking.py --files sample1.txt sample2.txt
+python tools/benchmark_chunking.py --files your_text_a.txt your_text_b.txt
 ```
 
 The benchmarking tool compares traditional chunking with Meta-Chunking across multiple dimensions:
@@ -95,7 +98,7 @@ The benchmarking tool compares traditional chunking with Meta-Chunking across mu
 - Average chunk size
 - Chunk size distribution
 
-## Benefits for Web Summarizer
+## Benefits for Eris
 
 The Meta-Chunking approach provides several key benefits for our application:
 

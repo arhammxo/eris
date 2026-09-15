@@ -1,6 +1,6 @@
-# Getting Started with Enhanced Web Summarizer
+# Getting Started with Eris
 
-This guide will help you implement and deploy the Phase 1 improvements to the Web Summarizer application. These improvements include asynchronous processing, content quality scoring, headless browser support, and prompt optimization.
+This guide covers the Phase 1 improvements that shipped in Eris (formerly "Web Summarizer"). These improvements include asynchronous processing, content quality scoring, headless browser support, and prompt optimization.
 
 ## Implementation Guide
 
@@ -65,7 +65,9 @@ This guide will help you implement and deploy the Phase 1 improvements to the We
 ### Step 3: Code Integration
 
 1. **Replace Original Files with Enhanced Versions**
-   - Replace `app.py` with `enhanced_app.py` (or rename)
+   - `app.py` is the current application. `enhanced_app.py` is a superseded prototype that
+     imports modules which no longer exist (`modules.crawler`, `modules.async_processor`,
+     `modules.async_summarizer`) and will not start.
    - Update `config.py` with the enhanced version
    - Add all new modules to the `modules/` directory
 
@@ -79,7 +81,7 @@ This guide will help you implement and deploy the Phase 1 improvements to the We
 
 1. **Run the Application**
    ```bash
-   python enhanced_app.py
+   python run.py
    ```
 
 2. **Test Basic Functionality**
@@ -103,10 +105,6 @@ The application has been converted from Flask to Quart to enable true asynchrono
 - WebSockets provide real-time updates
 - Progress tracking for improved UX
 
-If you prefer using Flask, you can use the `flask-async-views` extension as an alternative:
-```bash
-pip install flask-async-views
-```
 
 ### Content Quality Scoring
 
@@ -133,7 +131,7 @@ Browser-based crawling is enabled for JavaScript-heavy sites:
 - Manages browser resources efficiently
 - Falls back to regular HTTP requests when appropriate
 
-The system includes a list of known JS-required domains that you can extend in `browser_crawler.py`.
+The system includes a list of known JS-required domains that you can extend in `modules/crawlers/browser.py` (`JS_REQUIRED_DOMAINS`).
 
 ### Prompt Optimization
 
@@ -145,7 +143,7 @@ The summarizer now includes enhanced prompt engineering:
 - Prioritizes higher quality sources in summaries
 - Improves source attribution
 
-You can add additional query types and patterns in `QUERY_TYPES` in `async_summarizer.py`.
+You can add additional query types and patterns in `QUERY_TYPES` in `modules/summarizer.py`.
 
 ## Deployment Considerations
 
@@ -165,7 +163,7 @@ For production deployment, consider the following:
 2. **Use a Production ASGI Server**
    ```bash
    pip install hypercorn
-   hypercorn enhanced_app:app --bind 0.0.0.0:8000
+   hypercorn app:app --bind 0.0.0.0:8000
    ```
 
 3. **Implement Rate Limiting**
