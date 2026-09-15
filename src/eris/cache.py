@@ -18,7 +18,7 @@ import sqlite3
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -89,8 +89,7 @@ def normalize_url(url: str) -> str:
     kept = [
         (key, value)
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
-        if key.lower() not in _TRACKING_PARAMS
-        and not key.lower().startswith(_TRACKING_PREFIXES)
+        if key.lower() not in _TRACKING_PARAMS and not key.lower().startswith(_TRACKING_PREFIXES)
     ]
     query = urlencode(sorted(kept))
     return urlunsplit((scheme, netloc, path, query, ""))
@@ -222,7 +221,7 @@ class Cache:
             url=url,
             title=row["title"],
             text=row["text"],
-            fetched_at=datetime.fromtimestamp(float(row["fetched_at"]), tz=timezone.utc),
+            fetched_at=datetime.fromtimestamp(float(row["fetched_at"]), tz=UTC),
         )
 
     def put_page(self, document: Document) -> None:
@@ -297,7 +296,7 @@ class Cache:
                 url=row["url"],
                 title=row["title"],
                 text=row["text"],
-                fetched_at=datetime.fromtimestamp(float(row["fetched_at"]), tz=timezone.utc),
+                fetched_at=datetime.fromtimestamp(float(row["fetched_at"]), tz=UTC),
             )
             for row in rows
         ]
@@ -310,9 +309,7 @@ class Cache:
         key = normalize_query(query, max_results)
         try:
             row = (
-                self._connect()
-                .execute("SELECT * FROM searches WHERE query = ?", (key,))
-                .fetchone()
+                self._connect().execute("SELECT * FROM searches WHERE query = ?", (key,)).fetchone()
             )
         except sqlite3.Error as exc:
             raise CacheError(f"Cache read failed for query {query!r}: {exc}") from exc
@@ -360,9 +357,7 @@ class Cache:
         try:
             conn = self._connect()
             removed = conn.execute("DELETE FROM pages WHERE expires_at <= ?", (now,)).rowcount
-            removed += conn.execute(
-                "DELETE FROM searches WHERE expires_at <= ?", (now,)
-            ).rowcount
+            removed += conn.execute("DELETE FROM searches WHERE expires_at <= ?", (now,)).rowcount
             conn.commit()
         except sqlite3.Error as exc:
             raise CacheError(f"Cache purge failed: {exc}") from exc
@@ -427,10 +422,19 @@ class NullCache:
     def all_pages(self, *, include_expired: bool = False) -> list[Document]:
         return []
 
-    def get_search(self, query: str, max_results: int) -> list[SearchResult] | None:
+    def get_search(
+        self,
+        query: str,
+        max_results: int,
+    ) -> list[SearchResult] | None:
         return None
 
-    def put_search(self, query: str, max_results: int, results: Sequence[SearchResult]) -> None:
+    def put_search(
+        self,
+        query: str,
+        max_results: int,
+        results: Sequence[SearchResult],
+    ) -> None:
         return None
 
     def purge_expired(self) -> int:

@@ -41,13 +41,95 @@ _TOKEN_RE = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
 # Removing these lifts precision on natural-language questions: they appear in
 # nearly every chunk, so they carry almost no discriminative signal.
 STOPWORDS: frozenset[str] = frozenset(
-    """
-    a an and are as at be been being but by for from had has have he her here hers him his
-    how i if in into is it its me my of on or our ours she that the their theirs them then
-    there these they this those to us was were what when where which who whom why will with
-    you your yours do does did doing done can could should would may might must not no nor
-    s t don isn aren wasn weren
-    """.split()
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "aren",
+        "as",
+        "at",
+        "be",
+        "been",
+        "being",
+        "but",
+        "by",
+        "can",
+        "could",
+        "did",
+        "do",
+        "does",
+        "doing",
+        "don",
+        "done",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "here",
+        "hers",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "isn",
+        "it",
+        "its",
+        "may",
+        "me",
+        "might",
+        "must",
+        "my",
+        "no",
+        "nor",
+        "not",
+        "of",
+        "on",
+        "or",
+        "our",
+        "ours",
+        "s",
+        "she",
+        "should",
+        "t",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "to",
+        "us",
+        "was",
+        "wasn",
+        "were",
+        "weren",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "whom",
+        "why",
+        "will",
+        "with",
+        "would",
+        "you",
+        "your",
+        "yours",
+    ]
 )
 
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
@@ -137,9 +219,7 @@ def chunk_documents(
         for piece in pieces:
             if len(piece) < min_chars:
                 continue
-            chunks.append(
-                Chunk(url=document.url, title=document.title, text=piece, index=index)
-            )
+            chunks.append(Chunk(url=document.url, title=document.title, text=piece, index=index))
             index += 1
     log.debug("chunked %d documents into %d chunks", len(list(documents or [])), len(chunks))
     return chunks
@@ -169,8 +249,7 @@ class Scorer(Protocol):
 
     name: str
 
-    def score(self, query: str, corpus: Sequence[str]) -> np.ndarray:
-        ...
+    def score(self, query: str, corpus: Sequence[str]) -> np.ndarray: ...
 
 
 class BM25Scorer:
@@ -313,9 +392,7 @@ class HybridScorer:
         primary = _normalize_scores(np.asarray(self.primary.score(query, corpus), dtype=float))
         if self.secondary is None or self.weight >= 1.0:
             return primary
-        secondary = _normalize_scores(
-            np.asarray(self.secondary.score(query, corpus), dtype=float)
-        )
+        secondary = _normalize_scores(np.asarray(self.secondary.score(query, corpus), dtype=float))
         if secondary.shape != primary.shape:
             raise RetrievalError("scorer outputs have mismatched shapes")
         if self.weight <= 0.0:
@@ -351,7 +428,7 @@ def mmr_select(
 ) -> list[Chunk]:
     """Greedily select ``top_k`` chunks balancing relevance against redundancy.
 
-    Each step picks ``argmax λ·relevance − (1−λ)·max_similarity_to_selected``.
+    Each step picks ``argmax(lambda * relevance - (1 - lambda) * max_similarity_to_selected)``.
     A per-URL cap is applied on top: it is a hard guarantee of source diversity,
     where MMR alone only makes redundancy expensive. If the cap leaves fewer
     than ``top_k`` candidates, it is relaxed so the context is still filled.
@@ -449,7 +526,9 @@ class Retriever:
         if not chunks:
             return []
         scores = self.scorer.score(query, [c.text for c in chunks])
-        scored = [chunk.with_score(float(score)) for chunk, score in zip(chunks, scores)]
+        scored = [
+            chunk.with_score(float(score)) for chunk, score in zip(chunks, scores, strict=True)
+        ]
         scored.sort(key=lambda c: (-c.score, c.url, c.index))
         return scored
 

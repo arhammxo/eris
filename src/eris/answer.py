@@ -21,13 +21,14 @@ from eris.models import Answer, Chunk, Citation
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are Eris, a research assistant that answers strictly from supplied web sources.
+SYSTEM_PROMPT = """You are Eris, a research assistant that answers strictly from \
+supplied web sources.
 
 Rules:
 1. Use ONLY the numbered sources in the CONTEXT block. Do not use prior knowledge \
 about the topic, and never invent facts, numbers, dates or quotes.
 2. Cite every factual claim inline with bracketed source numbers, e.g. [1] or [2][3]. \
-Cite the specific source the claim came from.
+Cite the source the claim actually came from.
 3. Never cite a number that does not appear in the CONTEXT block.
 4. If the sources do not contain the answer, say so plainly and explain what is missing. \
 Do not guess, and do not pad the answer.
@@ -105,9 +106,7 @@ def validate_citations(
     for number in cited:
         if 1 <= number <= len(chunks):
             chunk = chunks[number - 1]
-            valid.append(
-                Citation(n=number, url=chunk.url, title=chunk.title.strip() or chunk.url)
-            )
+            valid.append(Citation(n=number, url=chunk.url, title=chunk.title.strip() or chunk.url))
         else:
             invalid.append(number)
     if invalid:

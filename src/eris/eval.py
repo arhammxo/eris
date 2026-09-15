@@ -315,6 +315,4 @@ def run_eval_file(
     top_k: int | None = None,
 ) -> EvalReport:
     """Load ``path`` and evaluate every case in it."""
-    return run_eval(
-        load_cases(path), settings=settings, llm_client=llm_client, top_k=top_k
-    )
+    return run_eval(load_cases(path), settings=settings, llm_client=llm_client, top_k=top_k)

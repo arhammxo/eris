@@ -84,19 +84,57 @@ class AnthropicClient:
 
     def complete(self, system: str, prompt: str) -> str:
         client = self._ensure_client()
+        request: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "system": system,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        create = client.messages.create
         try:
-            response = client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                system=system,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            response = create(**self._supported_kwargs(create, request))
         except DependencyMissingError:
             raise
         except Exception as exc:
             raise LLMError(f"Anthropic request failed: {type(exc).__name__}: {exc}") from exc
         return self._extract_text(response)
+
+    # Without these the request is meaningless, so their absence from a
+    # signature means we misread it rather than that the SDK dropped them.
+    _ESSENTIAL_KWARGS = frozenset({"model", "messages", "max_tokens"})
+
+    @staticmethod
+    def _supported_kwargs(create: Any, request: dict[str, Any]) -> dict[str, Any]:
+        """Drop request keys the installed SDK does not accept.
+
+        The Messages API surface moves between major SDK versions - ``temperature``
+        was removed from ``messages.create`` in anthropic 1.5, for example. Rather
+        than pin a narrow version range, send only what the signature accepts and
+        log what was dropped.
+
+        The full request is sent unchanged when the signature takes ``**kwargs``,
+        cannot be introspected, or does not mention every essential argument. That
+        last case means the signature is not the one we expect, and a truthful
+        error from the SDK beats a silently crippled request.
+        """
+        import inspect
+
+        try:
+            parameters = inspect.signature(create).parameters
+        except (TypeError, ValueError):
+            return request
+        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+            return request
+        if not AnthropicClient._ESSENTIAL_KWARGS.issubset(parameters):
+            log.debug("unrecognised messages.create signature; sending the full request")
+            return request
+
+        supported = {key: value for key, value in request.items() if key in parameters}
+        dropped = sorted(set(request) - set(supported))
+        if dropped:
+            log.debug("installed anthropic SDK does not accept: %s", ", ".join(dropped))
+        return supported
 
     @staticmethod
     def _extract_text(response: Any) -> str:

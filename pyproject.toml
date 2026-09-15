@@ -72,6 +72,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# NullCache and StaticFetcher implement protocols, so their parameter names are
+# fixed by the interface even where a null implementation ignores the value.
+"src/eris/cache.py" = ["ARG002"]
+"src/eris/fetch.py" = ["ARG002"]
 "tests/*" = ["ARG001", "ARG002", "ARG005"]
 
 [tool.pytest.ini_options]

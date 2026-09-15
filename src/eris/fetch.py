@@ -69,7 +69,10 @@ _BOILERPLATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-_MIN_LINE_CHARS = 2
+# A line with no letters or digits is an artefact of stripping markup (stray
+# bullets, pipes, separators), never article text. Filtering on content rather
+# than on length keeps short but meaningful lines such as "5" or "a".
+_NO_ALNUM_RE = re.compile(r"^[^0-9a-zA-Z]+$")
 
 
 @runtime_checkable
@@ -93,7 +96,7 @@ def clean_text(raw: str) -> str:
         if not stripped:
             kept.append("")
             continue
-        if len(stripped) < _MIN_LINE_CHARS or _BOILERPLATE_RE.match(stripped):
+        if _NO_ALNUM_RE.match(stripped) or _BOILERPLATE_RE.match(stripped):
             continue
         kept.append(stripped)
     return _BLANK_RUN_RE.sub("\n\n", "\n".join(kept)).strip()

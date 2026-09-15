@@ -9,7 +9,7 @@ reserved for configuration, where validation and coercion earn their cost.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def utcnow() -> datetime:
@@ -17,7 +17,7 @@ def utcnow() -> datetime:
 
     Centralised so tests can monkeypatch a single symbol.
     """
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass(frozen=True, slots=True)

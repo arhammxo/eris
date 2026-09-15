@@ -190,8 +190,7 @@ def cache_command(stats: bool, do_clear: bool, purge: bool, as_json: bool) -> No
                     click.echo(f"path:      {snapshot.path}")
                     click.echo(f"ttl:       {settings.cache_ttl_s}s")
                     click.echo(
-                        f"pages:     {snapshot.fresh_pages} fresh, "
-                        f"{snapshot.expired_pages} expired"
+                        f"pages:     {snapshot.fresh_pages} fresh, {snapshot.expired_pages} expired"
                     )
                     click.echo(
                         f"searches:  {snapshot.fresh_searches} fresh, "
