@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eris"
+version = "0.1.0"
+description = "An LLM augmented with real-time web search and an optimized local retrieval layer."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Md. Anas Jamal", email = "dev.anasjamal@gmail.com" }]
+keywords = ["llm", "rag", "web-search", "retrieval", "bm25", "claude", "anthropic"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Text Processing :: Indexing",
+]
+dependencies = [
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "httpx>=0.27",
+  "click>=8.1",
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+# Keyless web search backend.
+search = ["ddgs>=9.0"]
+# Better HTML -> text extraction. Eris falls back to a stdlib/bs4 extractor.
+extract = ["trafilatura>=1.8", "beautifulsoup4>=4.12"]
+# TF-IDF cosine scorer for the hybrid ranker. BM25 works without it.
+tfidf = ["scikit-learn>=1.4"]
+# Anthropic Claude client.
+llm = ["anthropic>=0.34"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+all = [
+  "ddgs>=9.0",
+  "trafilatura>=1.8",
+  "beautifulsoup4>=4.12",
+  "scikit-learn>=1.4",
+  "anthropic>=0.34",
+]
+
+[project.urls]
+Homepage = "https://github.com/arhammxo/eris"
+Repository = "https://github.com/arhammxo/eris"
+Issues = "https://github.com/arhammxo/eris/issues"
+
+[project.scripts]
+eris = "eris.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RET", "ARG", "PTH", "RUF"]
+ignore = [
+  "B008",   # click decorators legitimately call functions in defaults
+  "RUF012", # ClassVar annotations not required for our simple settings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG001", "ARG002", "ARG005"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning:eris.*"]
