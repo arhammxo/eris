@@ -57,17 +57,22 @@ def test_none_overrides_are_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_secret_is_not_exposed_by_repr(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "sk-ant-super-secret")
+    """SecretStr must keep the key out of logs and tracebacks.
+
+    Placeholder keys throughout the suite deliberately avoid the real
+    ``sk-ant-`` prefix so secret scanners are not trained to ignore it.
+    """
+    monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "dummy-key-for-redaction-test")
     settings = load_settings()
-    assert "sk-ant-super-secret" not in repr(settings)
-    assert "sk-ant-super-secret" not in str(settings)
+    assert "dummy-key-for-redaction-test" not in repr(settings)
+    assert "dummy-key-for-redaction-test" not in str(settings)
     assert settings.anthropic_api_key is not None
-    assert settings.anthropic_api_key.get_secret_value() == "sk-ant-super-secret"
+    assert settings.anthropic_api_key.get_secret_value() == "dummy-key-for-redaction-test"
 
 
 def test_require_api_key_returns_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "sk-ant-abc")
-    assert load_settings().require_api_key() == "sk-ant-abc"
+    monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "dummy-key-abc")
+    assert load_settings().require_api_key() == "dummy-key-abc"
 
 
 def test_require_api_key_raises_when_absent() -> None:

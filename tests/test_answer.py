@@ -332,14 +332,14 @@ class TestAnthropicClient:
             AnthropicClient("   ", model="claude-x")
 
     def test_key_is_not_exposed_by_repr(self) -> None:
-        client = AnthropicClient("sk-ant-secret", model="claude-x")
-        assert "sk-ant-secret" not in repr(client)
+        client = AnthropicClient("dummy-key-redaction", model="claude-x")
+        assert "dummy-key-redaction" not in repr(client)
 
     def test_model_is_recorded(self) -> None:
-        assert AnthropicClient("sk-ant-x", model="claude-y").model == "claude-y"
+        assert AnthropicClient("dummy-key", model="claude-y").model == "claude-y"
 
     def test_missing_sdk_raises_dependency_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        client = AnthropicClient("sk-ant-x", model="claude-x")
+        client = AnthropicClient("dummy-key", model="claude-x")
 
         def _raise() -> object:
             raise DependencyMissingError("anthropic", "llm")
@@ -356,7 +356,7 @@ class TestAnthropicClient:
         class _Stub:
             messages = _Messages()
 
-        client = AnthropicClient("sk-ant-x", model="claude-x")
+        client = AnthropicClient("dummy-key", model="claude-x")
         monkeypatch.setattr(client, "_ensure_client", lambda: _Stub())
         with pytest.raises(LLMError, match="Anthropic request failed"):
             client.complete("s", "p")
@@ -375,7 +375,7 @@ class TestAnthropicClient:
         class _Stub:
             messages = _Messages()
 
-        client = AnthropicClient("sk-ant-x", model="claude-z", max_tokens=77, temperature=0.0)
+        client = AnthropicClient("dummy-key", model="claude-z", max_tokens=77, temperature=0.0)
         monkeypatch.setattr(client, "_ensure_client", lambda: _Stub())
         assert client.complete("SYS", "PROMPT") == "reply [1]"
         assert seen["model"] == "claude-z"
@@ -489,7 +489,7 @@ class TestSdkVersionTolerance:
         class _Stub:
             messages = _Messages()
 
-        client = AnthropicClient("sk-ant-x", model="claude-new", temperature=0.0)
+        client = AnthropicClient("dummy-key", model="claude-new", temperature=0.0)
         monkeypatch.setattr(client, "_ensure_client", lambda: _Stub())
         assert client.complete("SYS", "PROMPT") == "reply [1]"
         assert seen["model"] == "claude-new"

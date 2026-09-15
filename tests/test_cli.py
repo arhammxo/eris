@@ -67,7 +67,7 @@ class TestAskCommand:
     def test_offline_mode_with_empty_cache_refuses(
         self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "sk-ant-test-not-used")
+        monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "dummy-key-unused")
         monkeypatch.setenv("ERIS_CACHE_DIR", str(tmp_path / "cache"))
         result = runner.invoke(cli, ["ask", "anything", "--no-web"])
         assert result.exit_code == 0
@@ -113,7 +113,7 @@ class TestAskCommand:
     def test_verbose_reports_stage_timings(
         self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "sk-ant-test-not-used")
+        monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "dummy-key-unused")
         monkeypatch.setenv("ERIS_CACHE_DIR", str(tmp_path / "cache"))
         result = runner.invoke(cli, ["ask", "q", "--no-web", "--verbose"])
         assert "retrieve=" in result.output
@@ -122,7 +122,7 @@ class TestAskCommand:
     def test_json_output_is_valid_json(
         self, runner: CliRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "sk-ant-test-not-used")
+        monkeypatch.setenv("ERIS_ANTHROPIC_API_KEY", "dummy-key-unused")
         monkeypatch.setenv("ERIS_CACHE_DIR", str(tmp_path / "cache"))
         result = runner.invoke(cli, ["ask", "q", "--no-web", "--json"])
         assert result.exit_code == 0
