@@ -1,6 +1,6 @@
 # Core framework
 quart>=0.18.0
-flask-cache
+Flask-Caching>=2.0.0
 
 # Networking & Fetching
 aiohttp>=3.8.4
@@ -25,6 +25,7 @@ serpapi>=0.1.0
 
 # Data Handling
 aiofiles>=23.1.0
+numpy>=1.24.0  # perplexity scoring in modules/meta_chunking.py
 
 # Configuration
 python-dotenv>=1.0.0
