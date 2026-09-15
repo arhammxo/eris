@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.16.7
+
+      # modules/processor.py and modules/attribution_analyzer.py call
+      # nltk.sent_tokenize / stopwords at import time. Fetch the corpora up
+      # front so nothing has to hit the network mid-test.
+      - name: Download NLTK data
+        run: python -m nltk.downloader punkt punkt_tab stopwords
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      # Guards against import-time breakage across the whole package:
+      # modules/__init__.py eagerly imports search, cache, content_quality,
+      # processor, summarizer and the crawler stack.
+      - name: Smoke import
+        env:
+          SECRET_KEY: ci-not-a-secret
+        run: python -c "import modules; print('modules', modules.__version__)"
+
+      # No API keys are set, so nothing reaches OpenAI or SerpAPI. Tests that
+      # drifted from the current pipeline are marked xfail/skip with reasons.
+      - name: Tests
+        env:
+          SECRET_KEY: ci-not-a-secret
+        run: pytest -q
